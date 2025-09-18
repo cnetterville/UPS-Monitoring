@@ -91,8 +91,6 @@ class MenuBarManager: ObservableObject {
             }
         } else {
             // Fallback for older macOS versions
-            let bundleIdentifier = Bundle.main.bundleIdentifier ?? "com.nettervile.ups.monitor.UPS-Monitoring"
-            
             if launchAtLogin {
                 // Add to login items
                 let script = """
@@ -206,11 +204,10 @@ class MenuBarManager: ObservableObject {
     }
     
     private func updateMenuBarIcon() {
-        guard let statusBarButton = statusBarItem?.button,
-              let monitoringService = monitoringService else { return }
-        
+        guard let statusBarButton = statusBarItem?.button else { return }
+
         let overallStatus = getOverallStatus()
-        
+
         // Update icon based on status - use different icons instead of colors
         let iconName: String
         

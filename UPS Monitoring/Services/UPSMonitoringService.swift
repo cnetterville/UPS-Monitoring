@@ -31,10 +31,15 @@ class UPSMonitoringService: ObservableObject {
         static let batteryStatus = "1.3.6.1.2.1.33.1.2.1.0"
         static let batteryCharge = "1.3.6.1.2.1.33.1.2.4.0"
         static let batteryRuntime = "1.3.6.1.2.1.33.1.2.3.0"
+        static let batteryRuntimeAlt1 = "1.3.6.1.2.1.33.1.2.3" // Without .0
+        static let batteryRuntimeAlt2 = "1.3.6.1.4.1.3808.1.1.1.2.2.4.0" // CyberPower specific
+        static let batteryRuntimeAlt3 = "1.3.6.1.4.1.3808.1.1.1.2.2.3.0" // CyberPower alternative
+        static let batteryEstimatedTime = "1.3.6.1.2.1.33.1.2.3.1.3.1" // Estimated minutes remaining
         static let batteryVoltage = "1.3.6.1.2.1.33.1.2.5.0"
         static let batteryTemperature = "1.3.6.1.2.1.33.1.2.7.0"
         static let batteryLastReplaceDate = "1.3.6.1.2.1.33.1.2.11.0"  // Battery replace date
         static let batteryNextReplaceDate = "1.3.6.1.2.1.33.1.2.12.0" // Next replace date
+        static let batteryCurrent = "1.3.6.1.2.1.33.1.2.6.0" // Battery current (for charging detection)
         
         // Input Info
         static let inputLineVoltage = "1.3.6.1.2.1.33.1.3.3.1.3.1"
@@ -225,18 +230,14 @@ class UPSMonitoringService: ObservableObject {
         
         connection.send(content: listData, completion: .contentProcessed { error in
             if let error = error {
-                print("❌ Failed to send LIST UPS command: \(error)")
                 Task {
                     await completionManager.completeOnce(.failure(UPSError.networkError(error.localizedDescription)), completion: completion)
                 }
                 return
             }
             
-            print("✅ Sent LIST UPS command")
-            
             connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, error in
                 if let error = error {
-                    print("❌ Failed to receive LIST UPS response: \(error)")
                     Task {
                         await completionManager.completeOnce(.failure(UPSError.networkError(error.localizedDescription)), completion: completion)
                     }
@@ -244,14 +245,11 @@ class UPSMonitoringService: ObservableObject {
                 }
                 
                 guard let data = data, let response = String(data: data, encoding: .utf8) else {
-                    print("❌ Invalid LIST UPS response data")
                     Task {
                         await completionManager.completeOnce(.failure(UPSError.invalidResponse), completion: completion)
                     }
                     return
                 }
-                
-                print("📋 NUT LIST UPS response: \(response)")
                 
                 // Check if our UPS name is in the list or if we got any UPS at all
                 let lines = response.components(separatedBy: .newlines)
@@ -266,18 +264,14 @@ class UPSMonitoringService: ObservableObject {
                             availableUPS.append(upsNameInList)
                             if upsNameInList == upsName {
                                 foundUPS = true
-                                print("✅ Found UPS '\(upsName)' in server list")
                             }
                         }
                     }
                 }
                 
                 if !foundUPS && !availableUPS.isEmpty {
-                    print("⚠️ UPS '\(upsName)' not found in server list")
-                    print("📋 Available UPS devices: \(availableUPS)")
                     // Try using the first available UPS
                     if let firstUPS = availableUPS.first {
-                        print("🔄 Trying first available UPS: '\(firstUPS)'")
                         Task { @MainActor in
                             await self.getNUTVariables(connection: connection, device: device, upsName: firstUPS) { result in
                                 Task {
@@ -344,6 +338,8 @@ class UPSMonitoringService: ObservableObject {
             "GET VAR \(upsName) battery.charge",
             "GET VAR \(upsName) battery.runtime",
             "GET VAR \(upsName) battery.voltage",
+            "GET VAR \(upsName) battery.current", // For charging detection
+            "GET VAR \(upsName) battery.charge.restart",
             "GET VAR \(upsName) input.voltage",
             "GET VAR \(upsName) output.voltage",
             "GET VAR \(upsName) ups.load"
@@ -362,7 +358,6 @@ class UPSMonitoringService: ObservableObject {
             guard currentIndex < commands.count else {
                 // Parse all responses
                 let finalResponses = responsesLock.withLock { responses }
-                print("📊 Parsing NUT responses: \(finalResponses)")
                 
                 status.isOnline = !finalResponses.isEmpty
                 
@@ -379,11 +374,25 @@ class UPSMonitoringService: ObservableObject {
                 
                 // Additional NUT data parsing
                 if let runtimeStr = finalResponses["battery.runtime"], let runtime = Double(runtimeStr) {
-                    status.batteryRuntime = Int(runtime / 60) // Convert seconds to minutes
+                    let runtimeMinutes = Int(runtime / 60) // Convert seconds to minutes
+                    
+                    // Always store the runtime, let the UI decide how to display it
+                    status.batteryRuntime = runtimeMinutes
+                    
+                    // If runtime is very high, it usually means "unlimited" or charging
+                    if runtimeMinutes > 10000 {
+                        status.isCharging = true
+                    }
                 }
                 
                 if let voltageStr = finalResponses["battery.voltage"], let voltage = Double(voltageStr) {
                     status.batteryVoltage = voltage
+                }
+                
+                // Check for charging indicators
+                if let currentStr = finalResponses["battery.current"], let current = Double(currentStr) {
+                    // Positive current typically indicates charging, negative indicates discharging
+                    status.isCharging = current > 0
                 }
                 
                 if let inputVoltageStr = finalResponses["input.voltage"], let inputVoltage = Double(inputVoltageStr) {
@@ -405,22 +414,50 @@ class UPSMonitoringService: ObservableObject {
                     }
                 }
                 
-                // Status parsing inline
+                // Status parsing with charging detection
                 if let upsStatus = finalResponses["ups.status"] {
                     let flags = upsStatus.uppercased().components(separatedBy: " ")
+                    
+                    // Check for charging indicators in status
+                    if flags.contains("CHRG") || flags.contains("CHARGING") {
+                        status.isCharging = true
+                        status.batteryStatus = .batteryCharging
+                    }
+                    
                     if flags.contains("OB") {
                         status.status = flags.contains("LB") ? "On Battery (Low)" : "On Battery"
                         status.outputSource = "Battery"
+                        status.isCharging = false // Can't be charging while on battery
+                        status.batteryStatus = flags.contains("LB") ? .batteryLow : .batteryDischarging
                     } else if flags.contains("OL") {
                         status.status = "Online"
                         status.outputSource = "Normal"
+                        
+                        // If online and not explicitly discharging, likely charging or maintaining
+                        if status.isCharging == nil {
+                            // Check if battery is at full charge
+                            if let charge = status.batteryCharge, charge >= 95 {
+                                status.isCharging = false
+                                status.batteryStatus = .batteryNormal
+                            } else {
+                                status.isCharging = true
+                                status.batteryStatus = .batteryCharging
+                            }
+                        }
                     } else {
                         status.status = upsStatus
                         status.outputSource = "Unknown"
                     }
+                } else {
+                    // Default charging logic if no explicit status
+                    if status.outputSource == "Normal" && status.isCharging == nil {
+                        if let charge = status.batteryCharge, charge < 95 {
+                            status.isCharging = true
+                            status.batteryStatus = .batteryCharging
+                        }
+                    }
                 }
                 
-                print("✅ NUT query completed")
                 Task {
                     await completionManager.completeOnce(.success(status), completion: completion)
                 }
@@ -484,11 +521,8 @@ class UPSMonitoringService: ObservableObject {
         let community = device.community ?? "public"
         
         guard let snmpSender = SnmpSender.shared else {
-            print("❌ SNMP Sender not initialized")
             throw UPSError.connectionFailed
         }
-        
-        print("🔍 Querying SNMP device: \(device.host):\(device.port) with community '\(community)'")
         
         var status = UPSStatus(deviceId: device.id)
         status.lastUpdate = Date()
@@ -504,54 +538,277 @@ class UPSMonitoringService: ObservableObject {
             )
             
             switch result {
-            case .success(let binding):
-                print("✅ SNMP connection successful: \(binding)")
+            case .success(_):
                 status.isOnline = true
                 status.status = "Online"
                 
-                // Try to get UPS manufacturer
+                // Get UPS manufacturer with fallbacks
                 await getSNMPValue(snmpSender, device.host, community, UPSOIDs.upsIdentManufacturer) { value in
                     status.manufacturer = value
                 }
                 
-                // Try to get UPS model
+                // Fallback for CyberPower devices - they sometimes use different OIDs
+                if status.manufacturer == nil {
+                    await getSNMPValue(snmpSender, device.host, community, "1.3.6.1.2.1.1.1.0") { value in
+                        // Extract manufacturer from system description
+                        if let value = value {
+                            if value.lowercased().contains("cyberpower") {
+                                status.manufacturer = "CyberPower"
+                            } else if value.lowercased().contains("apc") {
+                                status.manufacturer = "APC"
+                            } else if value.lowercased().contains("tripp") {
+                                status.manufacturer = "Tripp Lite"
+                            }
+                        }
+                    }
+                }
+                
+                // Get UPS model with better parsing
                 await getSNMPValue(snmpSender, device.host, community, UPSOIDs.upsIdentModel) { value in
                     status.model = value
                 }
                 
-                // Try to get UPS name
+                // Get UPS name/identifier
                 await getSNMPValue(snmpSender, device.host, community, UPSOIDs.upsIdentName) { value in
                     status.upsName = value
                 }
                 
-                // Try to get battery charge
+                // Get battery charge with proper validation
                 await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryCharge) { value in
-                    status.batteryCharge = Double(value)
+                    if value >= 0 && value <= 100 {
+                        status.batteryCharge = Double(value)
+                    }
                 }
                 
-                // Try to get battery runtime (convert from seconds to minutes)
+                // Get battery status (includes charging information)
+                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryStatus) { value in
+                    if let batteryStatus = BatteryStatus(rawValue: Int(value)) {
+                        status.batteryStatus = batteryStatus
+                        
+                        // Determine charging status from battery status
+                        switch batteryStatus {
+                        case .batteryCharging:
+                            status.isCharging = true
+                        case .batteryDischarging:
+                            status.isCharging = false
+                        case .batteryNormal:
+                            // If normal and on AC power, likely maintaining/trickle charging
+                            status.isCharging = (status.outputSource != "Battery")
+                        default:
+                            break
+                        }
+                    }
+                }
+                
+                // Get battery runtime - CyberPower returns minutes directly for this OID
+                var runtimeFound = false
+                
+                // Try standard UPS-MIB OID first
                 await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryRuntime) { value in
-                    status.batteryRuntime = Int(value) / 60
+                    if value > 0 {
+                        // CyberPower UPS returns minutes directly for this OID
+                        let runtimeMinutes = Int(value)
+                        print("✅ SNMP Runtime (standard): \(value) minutes")
+                        status.batteryRuntime = runtimeMinutes
+                        runtimeFound = true
+                    } else {
+                        print("⚠️ SNMP Runtime (standard): returned \(value)")
+                    }
                 }
                 
-                // Try to get UPS status
+                // Try alternative OID if standard didn't work
+                if !runtimeFound {
+                    await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryRuntimeAlt1) { value in
+                        if value > 0 {
+                            // Try as minutes first, then as seconds if value seems too high
+                            let runtimeMinutes = value < 1000 ? Int(value) : Int(value) / 60
+                            print("✅ SNMP Runtime (alt1): \(value) = \(runtimeMinutes) minutes")
+                            status.batteryRuntime = runtimeMinutes
+                            runtimeFound = true
+                        } else {
+                            print("⚠️ SNMP Runtime (alt1): returned \(value)")
+                        }
+                    }
+                }
+                
+                // Try CyberPower specific OID
+                if !runtimeFound {
+                    await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryRuntimeAlt2) { value in
+                        if value > 0 {
+                            let runtimeMinutes = value < 1000 ? Int(value) : Int(value) / 60
+                            print("✅ SNMP Runtime (CyberPower 1): \(value) = \(runtimeMinutes) minutes")
+                            status.batteryRuntime = runtimeMinutes
+                            runtimeFound = true
+                        } else {
+                            print("⚠️ SNMP Runtime (CyberPower 1): returned \(value)")
+                        }
+                    }
+                }
+                
+                // Try another CyberPower specific OID
+                if !runtimeFound {
+                    await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryRuntimeAlt3) { value in
+                        if value > 0 {
+                            let runtimeMinutes = value < 1000 ? Int(value) : Int(value) / 60
+                            print("✅ SNMP Runtime (CyberPower 2): \(value) = \(runtimeMinutes) minutes")
+                            status.batteryRuntime = runtimeMinutes
+                            runtimeFound = true
+                        } else {
+                            print("⚠️ SNMP Runtime (CyberPower 2): returned \(value)")
+                        }
+                    }
+                }
+                
+                // Try estimated time remaining (likely already in minutes)
+                if !runtimeFound {
+                    await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryEstimatedTime) { value in
+                        if value > 0 {
+                            print("✅ SNMP Runtime (estimated): \(value) minutes")
+                            status.batteryRuntime = Int(value)
+                            runtimeFound = true
+                        } else {
+                            print("⚠️ SNMP Runtime (estimated): returned \(value)")
+                        }
+                    }
+                }
+                
+                if !runtimeFound {
+                    print("❌ No valid SNMP runtime found from any OID")
+                }
+                
+                // Get battery current (for charging detection)
+                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryCurrent) { value in
+                    if value != 0 {
+                        // Current direction can indicate charging vs discharging
+                        // Implementation varies by manufacturer, but typically:
+                        // Positive = charging, Negative = discharging
+                        let current = Double(value) / 10.0 // Often in tenths of amps
+                        
+                        if current > 0.1 {
+                            status.isCharging = true
+                        } else if current < -0.1 {
+                            status.isCharging = false
+                        }
+                    }
+                }
+                
+                // Get battery voltage with proper scaling
+                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryVoltage) { value in
+                    if value > 0 {
+                        // CyberPower typically reports in centivolts (hundredths)
+                        if value > 1000 {
+                            status.batteryVoltage = Double(value) / 100.0
+                        } else {
+                            status.batteryVoltage = Double(value) / 10.0
+                        }
+                    }
+                }
+                
+                // Get UPS status with proper parsing
                 await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.upsStatus) { value in
                     status.status = self.parseUPSStatus(Int(value))
+                    status.outputSource = self.parseOutputSource(Int(value))
+                    
+                    // Additional charging logic based on UPS status
+                    if status.isCharging == nil {
+                        switch Int(value) {
+                        case 2: // Online
+                            if let charge = status.batteryCharge, charge < 95 {
+                                status.isCharging = true
+                            } else {
+                                status.isCharging = false // Maintenance mode
+                            }
+                        case 3: // On Battery
+                            status.isCharging = false
+                        default:
+                            break
+                        }
+                    }
                 }
                 
-                // Try to get input voltage
+                // Get input voltage with corrected scaling
                 await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.inputLineVoltage) { value in
-                    status.inputVoltage = self.determineVoltageScale(value, dataType: "input")
+                    if value > 0 {
+                        status.inputVoltage = self.parseVoltage(value, expectedRange: 100...300)
+                    }
                 }
                 
-                // Try to get output voltage
+                // Try alternative input voltage OID for CyberPower
+                if status.inputVoltage == nil || (status.inputVoltage ?? 0) < 50 {
+                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.1.2.1.33.1.3.3.1.3.0") { value in
+                        if value > 0 {
+                            status.inputVoltage = self.parseVoltage(value, expectedRange: 100...300)
+                        }
+                    }
+                }
+                
+                // Get output voltage with corrected scaling
                 await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.outputVoltage) { value in
-                    status.outputVoltage = self.determineVoltageScale(value, dataType: "output")
+                    if value > 0 {
+                        status.outputVoltage = self.parseVoltage(value, expectedRange: 100...300)
+                    }
                 }
                 
-                // Try to get load percentage
+                // Try alternative output voltage OID
+                if status.outputVoltage == nil || (status.outputVoltage ?? 0) < 50 {
+                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.1.2.1.33.1.4.4.1.2.0") { value in
+                        if value > 0 {
+                            status.outputVoltage = self.parseVoltage(value, expectedRange: 100...300)
+                        }
+                    }
+                }
+                
+                // Get input frequency
+                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.inputFrequency) { value in
+                    if value > 0 {
+                        // Frequency is usually reported in tenths of Hz
+                        status.inputFrequency = Double(value) / 10.0
+                    }
+                }
+                
+                // Get output frequency
+                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.outputFrequency) { value in
+                    if value > 0 {
+                        status.outputFrequency = Double(value) / 10.0
+                    }
+                }
+                
+                // Get load percentage
                 await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.outputLoad) { value in
-                    status.load = Double(value)
+                    if value >= 0 && value <= 100 {
+                        status.load = Double(value)
+                    }
+                }
+                
+                // Get output power
+                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.outputPower) { value in
+                    if value > 0 {
+                        status.outputPower = Double(value)
+                    }
+                }
+                
+                // Get temperature
+                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.upsTemperature) { value in
+                    if value > 0 {
+                        status.temperature = Double(value)
+                    }
+                }
+                
+                // Get number of alarms
+                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.upsAlarmsPresent) { value in
+                    status.alarmsPresent = Int(value)
+                }
+                
+                // Get seconds on battery
+                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.upsSecondsOnBattery) { value in
+                    if value > 0 {
+                        status.secondsOnBattery = Int(value)
+                    }
+                }
+                
+                // Get power failures count
+                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.inputLineBads) { value in
+                    status.powerFailures = Int(value)
                 }
                 
             case .failure(let error):
@@ -584,109 +841,48 @@ class UPSMonitoringService: ObservableObject {
         return status
     }
     
-    // Helper function to get SNMP string values safely
-    private func getSNMPValue(_ sender: SnmpSender, _ host: String, _ community: String, _ oid: String, completion: @escaping (String) -> Void) async {
-        let result = await sender.send(
-            host: host,
-            command: .getRequest,
-            community: community,
-            oid: oid
-        )
-        
-        if case .success(let binding) = result {
-            let stringValue = String(describing: binding)
-            
-            // Parse the SNMP response to extract just the value
-            // Format is typically: "OID: Type: Value" or just "Value"
-            if let range = stringValue.range(of: ": ") {
-                let afterFirstColon = String(stringValue[range.upperBound...])
-                if let secondRange = afterFirstColon.range(of: ": ") {
-                    // Format: "OID: Type: Value"
-                    let cleanValue = String(afterFirstColon[secondRange.upperBound...])
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !cleanValue.isEmpty && cleanValue != "nil" {
-                        completion(cleanValue)
-                    }
-                } else {
-                    // Format: "OID: Value"
-                    let cleanValue = afterFirstColon
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !cleanValue.isEmpty && cleanValue != "nil" {
-                        completion(cleanValue)
-                    }
-                }
-            } else {
-                // Just the value directly
-                let cleanValue = stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !cleanValue.isEmpty && cleanValue != "nil" {
-                    completion(cleanValue)
-                }
-            }
-        }
-    }
-    
-    // Helper function to get SNMP integer values safely
-    private func getSNMPIntValue(_ sender: SnmpSender, _ host: String, _ community: String, _ oid: String, completion: @escaping (Int64) -> Void) async {
-        let result = await sender.send(
-            host: host,
-            command: .getRequest,
-            community: community,
-            oid: oid
-        )
-        
-        if case .success(let binding) = result {
-            let stringValue = String(describing: binding)
-            
-            // Parse the SNMP response to extract just the numeric value
-            // Format is typically: "OID: Type: Value" or just "Value"
-            var numericString = ""
-            
-            if let range = stringValue.range(of: ": ") {
-                let afterFirstColon = String(stringValue[range.upperBound...])
-                if let secondRange = afterFirstColon.range(of: ": ") {
-                    // Format: "OID: Type: Value"
-                    numericString = String(afterFirstColon[secondRange.upperBound...])
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                } else {
-                    // Format: "OID: Value"
-                    numericString = afterFirstColon
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-            } else {
-                // Just the value directly
-                numericString = stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            
-            // Extract only the numeric part (in case there are units or extra text)
-            let cleanNumeric = numericString.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-            
-            if let intValue = Int64(cleanNumeric), intValue > 0 {
-                completion(intValue)
-            }
-        }
-    }
-    
-    private func determineVoltageScale(_ rawValue: Int64, dataType: String) -> Double {
+    private func parseVoltage(_ rawValue: Int64, expectedRange: ClosedRange<Double>) -> Double {
         let value = Double(rawValue)
-        if dataType == "battery" {
-            return value / 1000.0
+        
+        // Try different scaling factors to get voltage in expected range
+        let scalingFactors: [Double] = [1.0, 0.1, 0.01, 10.0]
+        
+        for factor in scalingFactors {
+            let scaledValue = value * factor
+            if expectedRange.contains(scaledValue) {
+                return scaledValue
+            }
         }
+        
+        // If no scaling factor works, return the value divided by 10 (most common case)
         return value / 10.0
     }
     
+    
     private func parseUPSStatus(_ statusValue: Int) -> String {
         switch statusValue {
+        case 1: return "Unknown"
         case 2: return "Online"
         case 3: return "On Battery"
-        default: return "Unknown"
+        case 4: return "On Boost"
+        case 5: return "Sleeping"
+        case 6: return "On Fault"
+        case 7: return "No Communications Established"
+        case 8: return "Emergency Power Off"
+        default: return "Status \(statusValue)"
         }
     }
     
     private func parseOutputSource(_ sourceValue: Int) -> String {
         switch sourceValue {
+        case 1: return "Unknown"
+        case 2: return "AC"
         case 3: return "Normal"
+        case 4: return "Bypass"
         case 5: return "Battery"
-        default: return "Unknown"
+        case 6: return "Booster"
+        case 7: return "Reducer"
+        default: return "Source \(sourceValue)"
         }
     }
     
@@ -727,5 +923,206 @@ class UPSMonitoringService: ObservableObject {
         if let data = try? JSONEncoder().encode(devices) {
             UserDefaults.standard.set(data, forKey: "UPSDevices")
         }
+    }
+    
+    // MARK: - SNMP Helper Functions
+    
+    private func getSNMPValue(_ snmpSender: SnmpSender, _ host: String, _ community: String, _ oid: String, completion: @escaping (String?) -> Void) async {
+        let result = await snmpSender.send(
+            host: host,
+            command: .getRequest,
+            community: community,
+            oid: oid
+        )
+        
+        switch result {
+        case .success(let binding):
+            let stringValue = extractStringFromBinding(binding)
+            completion(stringValue)
+        case .failure:
+            completion(nil)
+        }
+    }
+    
+    private func getSNMPIntValue(_ snmpSender: SnmpSender, _ host: String, _ community: String, _ oid: String, completion: @escaping (Int64) -> Void) async {
+        let result = await snmpSender.send(
+            host: host,
+            command: .getRequest,
+            community: community,
+            oid: oid
+        )
+        
+        switch result {
+        case .success(let binding):
+            let intValue = extractIntFromBinding(binding)
+            print("🔍 SNMP OID \(oid): extracted value = \(intValue)")
+            if intValue != 0 {
+                completion(intValue)
+            }
+        case .failure(let error):
+            print("❌ SNMP OID \(oid) failed: \(error)")
+            break
+        }
+    }
+    
+    private func extractStringFromBinding(_ binding: Any) -> String? {
+        let mirror = Mirror(reflecting: binding)
+        
+        for child in mirror.children {
+            if child.label == "value" {
+                let valueString = String(describing: child.value)
+                
+                // Handle OctetString format specifically
+                if valueString.contains("OctetString:") {
+                    let components = valueString.components(separatedBy: "OctetString:")
+                    if components.count > 1 {
+                        let extractedValue = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !extractedValue.isEmpty && extractedValue != "nil" {
+                            return extractedValue
+                        }
+                    }
+                }
+                
+                // Handle other ASN.1 string types
+                if valueString.contains("String:") {
+                    if let range = valueString.range(of: "String:", options: .backwards) {
+                        let extractedValue = String(valueString[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !extractedValue.isEmpty && extractedValue != "nil" {
+                            return extractedValue
+                        }
+                    }
+                }
+                
+                // Try reflection approach
+                let valueMirror = Mirror(reflecting: child.value)
+                for valueChild in valueMirror.children {
+                    if let stringValue = valueChild.value as? String, !stringValue.isEmpty {
+                        return stringValue
+                    }
+                    
+                    if let dataValue = valueChild.value as? Data {
+                        if let stringValue = String(data: dataValue, encoding: .utf8), !stringValue.isEmpty {
+                            return stringValue
+                        }
+                    }
+                }
+                
+                // Fallback string parsing
+                if !valueString.isEmpty && valueString != "nil" && !valueString.contains("endOfMibView") {
+                    let cleanValue = valueString
+                        .replacingOccurrences(of: "Optional(", with: "")
+                        .replacingOccurrences(of: ")", with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    if !cleanValue.isEmpty && cleanValue != "nil" {
+                        return cleanValue
+                    }
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    private func extractIntFromBinding(_ binding: Any) -> Int64 {
+        let mirror = Mirror(reflecting: binding)
+        
+        for child in mirror.children {
+            if child.label == "value" {
+                let valueString = String(describing: child.value)
+                print("🔍 SNMP binding value string: '\(valueString)'")
+                
+                // Handle Integer format
+                if valueString.contains("Integer:") {
+                    let components = valueString.components(separatedBy: "Integer:")
+                    if components.count > 1 {
+                        let intString = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let intValue = Int64(intString) {
+                            print("✅ Parsed Integer: \(intValue)")
+                            return intValue
+                        }
+                    }
+                }
+                
+                // Handle Counter format
+                if valueString.contains("Counter:") {
+                    let components = valueString.components(separatedBy: "Counter:")
+                    if components.count > 1 {
+                        let intString = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let intValue = Int64(intString) {
+                            print("✅ Parsed Counter: \(intValue)")
+                            return intValue
+                        }
+                    }
+                }
+                
+                // Handle Gauge format
+                if valueString.contains("Gauge:") {
+                    let components = valueString.components(separatedBy: "Gauge:")
+                    if components.count > 1 {
+                        let intString = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let intValue = Int64(intString) {
+                            print("✅ Parsed Gauge: \(intValue)")
+                            return intValue
+                        }
+                    }
+                }
+                
+                // Handle Gauge32 format (this was missing!)
+                if valueString.contains("Gauge32:") {
+                    let components = valueString.components(separatedBy: "Gauge32:")
+                    if components.count > 1 {
+                        let intString = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let intValue = Int64(intString) {
+                            print("✅ Parsed Gauge32: \(intValue)")
+                            return intValue
+                        }
+                    }
+                }
+                
+                // Handle TimeTicks format (common for runtime)
+                if valueString.contains("TimeTicks:") {
+                    let components = valueString.components(separatedBy: "TimeTicks:")
+                    if components.count > 1 {
+                        let intString = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let intValue = Int64(intString) {
+                            print("✅ Parsed TimeTicks: \(intValue)")
+                            return intValue
+                        }
+                    }
+                }
+                
+                // Try reflection approach
+                let valueMirror = Mirror(reflecting: child.value)
+                for valueChild in valueMirror.children {
+                    if let intValue = valueChild.value as? Int64 {
+                        print("✅ Reflected Int64: \(intValue)")
+                        return intValue
+                    }
+                    if let intValue = valueChild.value as? Int {
+                        print("✅ Reflected Int: \(intValue)")
+                        return Int64(intValue)
+                    }
+                    if let intValue = valueChild.value as? UInt64 {
+                        print("✅ Reflected UInt64: \(intValue)")
+                        return Int64(intValue)
+                    }
+                    if let intValue = valueChild.value as? UInt {
+                        print("✅ Reflected UInt: \(intValue)")
+                        return Int64(intValue)
+                    }
+                }
+                
+                // Try direct parsing
+                if let intValue = Int64(valueString) {
+                    print("✅ Direct parsed: \(intValue)")
+                    return intValue
+                }
+                
+                print("❌ Could not extract integer from: '\(valueString)'")
+            }
+        }
+        
+        return 0
     }
 }

@@ -64,6 +64,8 @@ struct UPSStatus: Identifiable {
     var batteryRuntime: Int? // Minutes
     var batteryVoltage: Double? // Volts
     var batteryTemperature: Double? // Celsius
+    var batteryStatus: BatteryStatus? // Charging, discharging, etc.
+    var isCharging: Bool? // Whether battery is currently charging
     var inputVoltage: Double?
     var inputFrequency: Double? // Hz
     var outputVoltage: Double?
@@ -81,12 +83,81 @@ struct UPSStatus: Identifiable {
     var secondsOnBattery: Int? // Time on battery power
     var alarmsPresent: Int? // Number of active alarms
     
+    // Computed property for formatted runtime
+    var formattedRuntime: String? {
+        guard let runtime = batteryRuntime else { 
+            // If no runtime but we know we're charging and online, show unlimited
+            if let isCharging = isCharging, isCharging && outputSource != "Battery" {
+                return "∞"
+            }
+            return nil 
+        }
+        
+        // Handle unlimited/very high runtime when charging
+        if runtime > 600 || (runtime > 120 && isCharging == true && outputSource != "Battery") {
+            return "∞"
+        }
+        
+        if runtime < 60 {
+            return "\(runtime) min"
+        } else {
+            let hours = runtime / 60
+            let minutes = runtime % 60
+            if minutes == 0 {
+                return "\(hours)h"
+            } else {
+                return "\(hours)h \(minutes)m"
+            }
+        }
+    }
+    
+    // Computed property for battery status description
+    var batteryStatusDescription: String {
+        if let isCharging = isCharging {
+            if isCharging {
+                return "Charging"
+            } else if outputSource == "Battery" {
+                return "Discharging"
+            } else {
+                return "Full/Maintenance"
+            }
+        } else if let batteryStatus = batteryStatus {
+            return batteryStatus.description
+        } else if outputSource == "Battery" {
+            return "On Battery"
+        } else {
+            return "Unknown"
+        }
+    }
+    
     init(deviceId: UUID) {
         self.deviceId = deviceId
         self.timestamp = Date()
         self.isOnline = false
         self.status = "Unknown"
         self.lastUpdate = Date()
+    }
+}
+
+enum BatteryStatus: Int, CaseIterable, Codable, CustomStringConvertible {
+    case unknown = 1
+    case batteryNormal = 2
+    case batteryLow = 3
+    case batteryDepleted = 4
+    case batteryDischarging = 5
+    case batteryFailure = 6
+    case batteryCharging = 7  // Added for charging detection
+    
+    var description: String {
+        switch self {
+        case .unknown: return "Unknown"
+        case .batteryNormal: return "Normal"
+        case .batteryLow: return "Low"
+        case .batteryDepleted: return "Depleted"
+        case .batteryDischarging: return "Discharging"
+        case .batteryFailure: return "Failure"
+        case .batteryCharging: return "Charging"
+        }
     }
 }
 

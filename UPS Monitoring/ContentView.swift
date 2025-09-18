@@ -227,18 +227,51 @@ struct MacOSDeviceCard: View {
             if let status = status, status.isOnline {
                 VStack(spacing: 20) {
                     // UPS Info section
-                    if let manufacturer = status.manufacturer, let model = status.model {
-                        VStack(spacing: 4) {
-                            Text("\(manufacturer) \(model)")
+                    VStack(spacing: 8) {
+                        if let manufacturer = status.manufacturer {
+                            if let model = status.model {
+                                VStack(spacing: 4) {
+                                    Text("\(manufacturer) \(model)")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(.primary)
+                                    
+                                    if let upsName = status.upsName, upsName != model && !upsName.isEmpty {
+                                        Text(upsName)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            } else {
+                                Text(manufacturer)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.primary)
+                                
+                                if let upsName = status.upsName, !upsName.isEmpty {
+                                    Text(upsName)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } else if let model = status.model {
+                            VStack(spacing: 4) {
+                                Text(model)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.primary)
+                                
+                                if let upsName = status.upsName, upsName != model && !upsName.isEmpty {
+                                    Text(upsName)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } else if let upsName = status.upsName, !upsName.isEmpty {
+                            Text(upsName)
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundStyle(.secondary)
-                            
-                            if let upsName = status.upsName {
-                                Text(upsName)
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
                         }
                     }
                     
@@ -246,7 +279,8 @@ struct MacOSDeviceCard: View {
                     if let batteryCharge = status.batteryCharge, batteryCharge > 0 {
                         MacOSBatteryView(
                             charge: batteryCharge,
-                            runtime: status.batteryRuntime
+                            runtime: status.batteryRuntime,
+                            status: status
                         )
                     }
                     
@@ -327,6 +361,28 @@ struct MacOSDeviceCard: View {
             ))
         }
         
+        // Battery Runtime
+        if let formattedRuntime = status.formattedRuntime {
+            let color: Color = {
+                // If showing unlimited (∞), use blue color
+                if formattedRuntime == "∞" {
+                    return .blue
+                }
+                
+                if let runtime = status.batteryRuntime {
+                    return runtime < 15 ? .red : runtime < 30 ? .orange : .green
+                }
+                return .blue
+            }()
+            
+            metrics.append(MacOSMetric(
+                title: "Runtime",
+                value: formattedRuntime,
+                icon: formattedRuntime == "∞" ? "infinity" : "clock.fill",
+                color: color
+            ))
+        }
+        
         // Power output
         if let power = status.outputPower, power > 0 {
             metrics.append(MacOSMetric(
@@ -339,10 +395,11 @@ struct MacOSDeviceCard: View {
         
         // Input voltage
         if let inputVoltage = status.inputVoltage, inputVoltage > 0 {
-            let isNormal = inputVoltage >= 110 && inputVoltage <= 125 // Typical range
+            let isNormal = inputVoltage >= 110 && inputVoltage <= 130 // Broader range for different regions
+            let displayVoltage = inputVoltage < 10 ? String(format: "%.1fV", inputVoltage) : "\(Int(inputVoltage))V"
             metrics.append(MacOSMetric(
                 title: "Input",
-                value: "\(Int(inputVoltage))V",
+                value: displayVoltage,
                 icon: "powerplug.fill",
                 color: isNormal ? .green : .orange
             ))
@@ -350,10 +407,11 @@ struct MacOSDeviceCard: View {
         
         // Output voltage
         if let outputVoltage = status.outputVoltage, outputVoltage > 0 {
-            let isNormal = outputVoltage >= 110 && outputVoltage <= 125
+            let isNormal = outputVoltage >= 110 && outputVoltage <= 130
+            let displayVoltage = outputVoltage < 10 ? String(format: "%.1fV", outputVoltage) : "\(Int(outputVoltage))V"
             metrics.append(MacOSMetric(
                 title: "Output",
-                value: "\(Int(outputVoltage))V",
+                value: displayVoltage,
                 icon: "poweroutlet.type.a.fill",
                 color: isNormal ? .green : .orange
             ))
@@ -435,11 +493,43 @@ struct MacOSStatusBadge: View {
 struct MacOSBatteryView: View {
     let charge: Double
     let runtime: Int?
+    let status: UPSStatus?
     
     private var batteryColor: Color {
         if charge > 50 { return .green }
         else if charge > 20 { return .orange }
         else { return .red }
+    }
+    
+    private var chargingStatusInfo: (text: String, icon: String, color: Color)? {
+        guard let status = status else { return nil }
+        
+        if let isCharging = status.isCharging {
+            if isCharging {
+                return ("Charging", "bolt.fill", .green)
+            } else if status.outputSource == "Battery" {
+                return ("Discharging", "minus.circle.fill", .orange)
+            } else {
+                return ("Full", "checkmark.circle.fill", .blue)
+            }
+        } else if let batteryStatus = status.batteryStatus {
+            switch batteryStatus {
+            case .batteryCharging:
+                return ("Charging", "bolt.fill", .green)
+            case .batteryDischarging:
+                return ("Discharging", "minus.circle.fill", .orange)
+            case .batteryLow:
+                return ("Low", "exclamationmark.triangle.fill", .red)
+            case .batteryNormal:
+                return ("Normal", "checkmark.circle.fill", .green)
+            default:
+                return (batteryStatus.description, "battery.50", .secondary)
+            }
+        } else if status.outputSource == "Battery" {
+            return ("On Battery", "battery.25", .orange)
+        }
+        
+        return nil
     }
     
     var body: some View {
@@ -463,17 +553,47 @@ struct MacOSBatteryView: View {
                 .tint(batteryColor)
                 .background(.quaternary, in: Capsule())
             
-            if let runtime = runtime, runtime > 0 {
-                HStack {
-                    Image(systemName: "clock")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
-                    Text("\(runtime) minutes remaining")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
-                    Spacer()
+            // Charging status and runtime info
+            HStack(spacing: 16) {
+                // Charging status
+                if let chargingInfo = chargingStatusInfo {
+                    HStack(spacing: 4) {
+                        Image(systemName: chargingInfo.icon)
+                            .font(.caption)
+                            .foregroundStyle(chargingInfo.color)
+                        
+                        Text(chargingInfo.text)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(chargingInfo.color)
+                    }
+                }
+                
+                Spacer()
+                
+                // Runtime
+                if let status = status, let formattedRuntime = status.formattedRuntime {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        Text(formattedRuntime)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                } else if let runtime = runtime, runtime > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        Text("\(runtime) min")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                 }
             }
         }
