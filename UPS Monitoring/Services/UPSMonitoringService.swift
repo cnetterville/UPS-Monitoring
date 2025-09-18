@@ -15,6 +15,7 @@ class UPSMonitoringService: ObservableObject {
     @Published var devices: [UPSDevice] = []
     @Published var statusData: [UUID: UPSStatus] = [:]
     @Published var isMonitoring = false
+    @Published var lastRefreshTime: Date? = nil
     
     private var monitoringTimer: Timer?
     private let updateInterval: TimeInterval = 30.0 // 30 seconds
@@ -108,10 +109,23 @@ class UPSMonitoringService: ObservableObject {
         monitoringTimer = nil
     }
     
+    func refreshAllDevices() async {
+        // Force an immediate update of all devices, regardless of monitoring state
+        await updateAllDevices()
+        lastRefreshTime = Date()
+    }
+    
+    func triggerImmediateRefresh() {
+        Task {
+            await refreshAllDevices()
+        }
+    }
+    
     private func updateAllDevices() async {
         for device in devices where device.isEnabled {
             await updateDeviceStatus(device)
         }
+        lastRefreshTime = Date()
     }
     
     private func updateDeviceStatus(_ device: UPSDevice) async {
@@ -751,7 +765,7 @@ class UPSMonitoringService: ObservableObject {
                 
                 // Try alternative output voltage OID
                 if status.outputVoltage == nil || (status.outputVoltage ?? 0) < 50 {
-                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.1.2.1.33.1.4.4.1.2.0") { value in
+                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.1.2.2.33.1.4.4.1.2.0") { value in
                         if value > 0 {
                             status.outputVoltage = self.parseVoltage(value, expectedRange: 100...300)
                         }

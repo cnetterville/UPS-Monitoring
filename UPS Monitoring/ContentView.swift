@@ -10,16 +10,37 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var monitoringService = UPSMonitoringService()
     @State private var showingSettings = false
+    @State private var isRefreshing = false
     
     var body: some View {
         NavigationSplitView {
             // Sidebar
             VStack(alignment: .leading, spacing: 16) {
-                Text("Devices")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
+                HStack {
+                    Text("Devices")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                    
+                    Spacer()
+                    
+                    Button {
+                        isRefreshing = true
+                        Task {
+                            await monitoringService.refreshAllDevices()
+                            isRefreshing = false
+                        }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                            .animation(.linear(duration: 1).repeatWhile(isRefreshing), value: isRefreshing)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRefreshing)
+                    .help("Refresh all devices")
+                    .keyboardShortcut("r", modifiers: .command)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
                 
                 if monitoringService.devices.isEmpty {
                     VStack(spacing: 12) {
@@ -55,6 +76,17 @@ struct ContentView: View {
                             Text("Monitoring Active")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    if let lastRefresh = monitoringService.lastRefreshTime {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            Text("Updated \(lastRefresh, style: .relative)")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
                     }
                     
@@ -94,6 +126,10 @@ struct ContentView: View {
             // Set up menu bar manager with monitoring service
             MenuBarManager.shared.setMonitoringService(monitoringService)
             
+            // Always trigger immediate refresh when view appears
+            monitoringService.triggerImmediateRefresh()
+            
+            // Start monitoring if we have devices and monitoring is not running
             if !monitoringService.devices.isEmpty && !monitoringService.isMonitoring {
                 monitoringService.startMonitoring()
             }
@@ -788,6 +824,8 @@ struct BatteryAgeText: View {
     }
 }
 
-#Preview {
-    ContentView()
+extension Animation {
+    func repeatWhile<T: Equatable>(_ condition: T) -> Animation {
+        return condition as? Bool == true ? self.repeatForever() : self
+    }
 }
