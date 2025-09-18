@@ -91,12 +91,19 @@ struct ContentView: View {
             MacOSSettingsView(monitoringService: monitoringService)
         }
         .onAppear {
+            // Set up menu bar manager with monitoring service
+            MenuBarManager.shared.setMonitoringService(monitoringService)
+            
             if !monitoringService.devices.isEmpty && !monitoringService.isMonitoring {
                 monitoringService.startMonitoring()
             }
         }
         .onDisappear {
-            monitoringService.stopMonitoring()
+            // Don't stop monitoring when ContentView disappears since the app continues running in menu bar
+            // monitoringService.stopMonitoring()
+            
+            // Notify menu bar manager that window is closing
+            MenuBarManager.shared.windowDidClose()
         }
         .frame(minWidth: 900, minHeight: 650)
     }
