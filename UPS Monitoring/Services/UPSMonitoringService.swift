@@ -30,7 +30,7 @@ class UPSMonitoringService: ObservableObject {
         static let upsStatus = "1.3.6.1.2.1.33.1.4.1.0" // Fixed: was duplicate of manufacturer
         
         // Battery Info (CyberPower typically reports these accurately)
-        static let batteryStatus = "1.3.6.1.2.1.33.1.2.1.0"
+        static let batteryStatus = "1.3.6.1.3.1.33.1.2.1.0"
         static let batteryCharge = "1.3.6.1.2.1.33.1.2.4.0"
         static let batteryRuntime = "1.3.6.1.2.1.33.1.2.3.0"
         static let batteryRuntimeAlt1 = "1.3.6.1.2.1.33.1.2.3" // Without .0
@@ -45,7 +45,6 @@ class UPSMonitoringService: ObservableObject {
         
         // Input Info
         static let inputLineVoltage = "1.3.6.1.2.1.33.1.3.3.1.3.1"
-        static let inputFrequency = "1.3.6.1.2.1.33.1.3.3.1.2.1"
         static let inputLineBads = "1.3.6.1.2.1.33.1.3.1.0"  // Power failures
         
         // Output Info
@@ -192,7 +191,6 @@ class UPSMonitoringService: ObservableObject {
             connection.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    print("✅ NUT connection ready")
                     Task {
                         await self.sendNUTCommands(connection: connection, device: device) { result in
                             connection.cancel()
@@ -202,25 +200,21 @@ class UPSMonitoringService: ObservableObject {
                         }
                     }
                 case .failed(let error):
-                    print("❌ NUT connection failed: \(error)")
                     connection.cancel()
                     Task {
                         await resumeManager.resumeOnce(.failure(UPSError.networkError(error.localizedDescription)), continuation: continuation)
                     }
                 case .cancelled:
-                    print("🔄 NUT connection cancelled")
                     Task {
                         await resumeManager.resumeOnce(.failure(UPSError.connectionFailed), continuation: continuation)
                     }
                 default:
-                    print("🔄 NUT connection state: \(state)")
                     break
                 }
             }
             
             // Reduce timeout to 10 seconds to prevent long hangs
             DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
-                print("⏰ NUT connection timeout")
                 connection.cancel()
                 Task {
                     await resumeManager.resumeOnce(.failure(UPSError.timeout), continuation: continuation)
@@ -234,7 +228,6 @@ class UPSMonitoringService: ObservableObject {
         status.lastUpdate = Date()
         
         let upsName = device.upsName ?? "ups"
-        print("🔍 Testing NUT connection to \(device.host):\(device.port), UPS name: '\(upsName)'")
         
         // Use an actor to manage completion state
         actor CompletionManager {
@@ -372,6 +365,7 @@ class UPSMonitoringService: ObservableObject {
             "GET VAR \(upsName) battery.charge.restart",
             "GET VAR \(upsName) input.voltage",
             "GET VAR \(upsName) output.voltage",
+            "GET VAR \(upsName) output.voltage.nominal", // Nominal vs actual
             "GET VAR \(upsName) ups.load"
         ]
         
@@ -430,7 +424,30 @@ class UPSMonitoringService: ObservableObject {
                 }
                 
                 if let outputVoltageStr = finalResponses["output.voltage"], let outputVoltage = Double(outputVoltageStr) {
-                    status.outputVoltage = outputVoltage
+                    // Check if we also have nominal voltage
+                    let nominalVoltage = finalResponses["output.voltage.nominal"].flatMap { Double($0) }
+                    let inputVoltage = finalResponses["input.voltage"].flatMap { Double($0) }
+                    
+                    // Smart voltage selection logic: use input voltage if output differs significantly
+                    if let input = inputVoltage, input > 100 && input < 140 {
+                        let voltageDiff = abs(outputVoltage - input)
+                        
+                        if voltageDiff > 10 {
+                            // Large voltage difference detected - likely nominal vs actual
+                            status.outputVoltage = input
+                        } else {
+                            status.outputVoltage = outputVoltage
+                        }
+                    } else {
+                        status.outputVoltage = outputVoltage
+                    }
+                } else if let nominalVoltageStr = finalResponses["output.voltage.nominal"], let nominalVoltage = Double(nominalVoltageStr) {
+                    // Only nominal voltage available - use input as approximation if available
+                    if let inputVoltageStr = finalResponses["input.voltage"], let inputVoltage = Double(inputVoltageStr) {
+                        status.outputVoltage = inputVoltage
+                    } else {
+                        status.outputVoltage = nominalVoltage
+                    }
                 }
                 
                 if let loadStr = finalResponses["ups.load"], let load = Double(loadStr) {
@@ -502,14 +519,12 @@ class UPSMonitoringService: ObservableObject {
             
             connection.send(content: data, completion: .contentProcessed { error in
                 if let error = error {
-                    print("❌ Failed to send command: \(error)")
                     sendNextCommand()
                     return
                 }
                 
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, error in
                     if let error = error {
-                        print("❌ Failed to receive response: \(error)")
                         sendNextCommand()
                         return
                     }
@@ -638,11 +653,8 @@ class UPSMonitoringService: ObservableObject {
                     if value > 0 {
                         // CyberPower UPS returns minutes directly for this OID
                         let runtimeMinutes = Int(value)
-                        print("✅ SNMP Runtime (standard): \(value) minutes")
                         status.batteryRuntime = runtimeMinutes
                         runtimeFound = true
-                    } else {
-                        print("⚠️ SNMP Runtime (standard): returned \(value)")
                     }
                 }
                 
@@ -652,11 +664,8 @@ class UPSMonitoringService: ObservableObject {
                         if value > 0 {
                             // Try as minutes first, then as seconds if value seems too high
                             let runtimeMinutes = value < 1000 ? Int(value) : Int(value) / 60
-                            print("✅ SNMP Runtime (alt1): \(value) = \(runtimeMinutes) minutes")
                             status.batteryRuntime = runtimeMinutes
                             runtimeFound = true
-                        } else {
-                            print("⚠️ SNMP Runtime (alt1): returned \(value)")
                         }
                     }
                 }
@@ -666,11 +675,8 @@ class UPSMonitoringService: ObservableObject {
                     await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryRuntimeAlt2) { value in
                         if value > 0 {
                             let runtimeMinutes = value < 1000 ? Int(value) : Int(value) / 60
-                            print("✅ SNMP Runtime (CyberPower 1): \(value) = \(runtimeMinutes) minutes")
                             status.batteryRuntime = runtimeMinutes
                             runtimeFound = true
-                        } else {
-                            print("⚠️ SNMP Runtime (CyberPower 1): returned \(value)")
                         }
                     }
                 }
@@ -680,11 +686,8 @@ class UPSMonitoringService: ObservableObject {
                     await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryRuntimeAlt3) { value in
                         if value > 0 {
                             let runtimeMinutes = value < 1000 ? Int(value) : Int(value) / 60
-                            print("✅ SNMP Runtime (CyberPower 2): \(value) = \(runtimeMinutes) minutes")
                             status.batteryRuntime = runtimeMinutes
                             runtimeFound = true
-                        } else {
-                            print("⚠️ SNMP Runtime (CyberPower 2): returned \(value)")
                         }
                     }
                 }
@@ -693,11 +696,8 @@ class UPSMonitoringService: ObservableObject {
                 if !runtimeFound {
                     await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.batteryEstimatedTime) { value in
                         if value > 0 {
-                            print("✅ SNMP Runtime (estimated): \(value) minutes")
                             status.batteryRuntime = Int(value)
                             runtimeFound = true
-                        } else {
-                            print("⚠️ SNMP Runtime (estimated): returned \(value)")
                         }
                     }
                 }
@@ -765,7 +765,7 @@ class UPSMonitoringService: ObservableObject {
                 
                 // Try alternative input voltage OID for CyberPower
                 if status.inputVoltage == nil || (status.inputVoltage ?? 0) < 50 {
-                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.1.2.1.33.1.3.3.1.3.0") { value in
+                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.1.2.2.33.1.3.3.1.3.0") { value in
                         if value > 0 {
                             status.inputVoltage = self.parseVoltage(value, expectedRange: 100...300)
                         }
@@ -788,13 +788,7 @@ class UPSMonitoringService: ObservableObject {
                     }
                 }
                 
-                // Get input frequency
-                await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.inputFrequency) { value in
-                    if value > 0 {
-                        // Frequency is usually reported in tenths of Hz
-                        status.inputFrequency = Double(value) / 10.0
-                    }
-                }
+                // Get input frequency - REMOVED
                 
                 // Get output frequency
                 await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.outputFrequency) { value in
@@ -842,7 +836,6 @@ class UPSMonitoringService: ObservableObject {
                 }
                 
             case .failure(let error):
-                print("❌ SNMP connection failed: \(error)")
                 status.isOnline = false
                 
                 // Provide more specific error messages
@@ -862,7 +855,6 @@ class UPSMonitoringService: ObservableObject {
             }
             
         } catch {
-            print("❌ SNMP query error: \(error)")
             status.isOnline = false
             status.status = "Connection failed: \(error.localizedDescription)"
             throw error
@@ -985,12 +977,10 @@ class UPSMonitoringService: ObservableObject {
         switch result {
         case .success(let binding):
             let intValue = extractIntFromBinding(binding)
-            print("🔍 SNMP OID \(oid): extracted value = \(intValue)")
             if intValue != 0 {
                 completion(intValue)
             }
-        case .failure(let error):
-            print("❌ SNMP OID \(oid) failed: \(error)")
+        case .failure:
             break
         }
     }
@@ -1060,7 +1050,6 @@ class UPSMonitoringService: ObservableObject {
         for child in mirror.children {
             if child.label == "value" {
                 let valueString = String(describing: child.value)
-                print("🔍 SNMP binding value string: '\(valueString)'")
                 
                 // Handle Integer format
                 if valueString.contains("Integer:") {
@@ -1068,7 +1057,6 @@ class UPSMonitoringService: ObservableObject {
                     if components.count > 1 {
                         let intString = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
                         if let intValue = Int64(intString) {
-                            print("✅ Parsed Integer: \(intValue)")
                             return intValue
                         }
                     }
@@ -1080,7 +1068,6 @@ class UPSMonitoringService: ObservableObject {
                     if components.count > 1 {
                         let intString = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
                         if let intValue = Int64(intString) {
-                            print("✅ Parsed Counter: \(intValue)")
                             return intValue
                         }
                     }
@@ -1092,19 +1079,17 @@ class UPSMonitoringService: ObservableObject {
                     if components.count > 1 {
                         let intString = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
                         if let intValue = Int64(intString) {
-                            print("✅ Parsed Gauge: \(intValue)")
                             return intValue
                         }
                     }
                 }
                 
-                // Handle Gauge32 format (this was missing!)
+                // Handle Gauge32 format
                 if valueString.contains("Gauge32:") {
                     let components = valueString.components(separatedBy: "Gauge32:")
                     if components.count > 1 {
                         let intString = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
                         if let intValue = Int64(intString) {
-                            print("✅ Parsed Gauge32: \(intValue)")
                             return intValue
                         }
                     }
@@ -1116,7 +1101,6 @@ class UPSMonitoringService: ObservableObject {
                     if components.count > 1 {
                         let intString = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
                         if let intValue = Int64(intString) {
-                            print("✅ Parsed TimeTicks: \(intValue)")
                             return intValue
                         }
                     }
@@ -1126,30 +1110,23 @@ class UPSMonitoringService: ObservableObject {
                 let valueMirror = Mirror(reflecting: child.value)
                 for valueChild in valueMirror.children {
                     if let intValue = valueChild.value as? Int64 {
-                        print("✅ Reflected Int64: \(intValue)")
                         return intValue
                     }
                     if let intValue = valueChild.value as? Int {
-                        print("✅ Reflected Int: \(intValue)")
                         return Int64(intValue)
                     }
                     if let intValue = valueChild.value as? UInt64 {
-                        print("✅ Reflected UInt64: \(intValue)")
                         return Int64(intValue)
                     }
                     if let intValue = valueChild.value as? UInt {
-                        print("✅ Reflected UInt: \(intValue)")
                         return Int64(intValue)
                     }
                 }
                 
                 // Try direct parsing
                 if let intValue = Int64(valueString) {
-                    print("✅ Direct parsed: \(intValue)")
                     return intValue
                 }
-                
-                print("❌ Could not extract integer from: '\(valueString)'")
             }
         }
         

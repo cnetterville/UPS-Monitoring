@@ -480,17 +480,6 @@ struct MacOSDeviceCard: View {
             ))
         }
         
-        // Input frequency
-        if let frequency = status.inputFrequency, frequency > 0 {
-            let isNormal = frequency >= 59.0 && frequency <= 61.0 // 60Hz ±1
-            metrics.append(MacOSMetric(
-                title: "Frequency",
-                value: String(format: "%.1fHz", frequency),
-                icon: "waveform",
-                color: isNormal ? .green : .orange
-            ))
-        }
-        
         // Battery voltage
         if let batteryVoltage = status.batteryVoltage, batteryVoltage > 0 {
             metrics.append(MacOSMetric(
@@ -564,6 +553,35 @@ struct MacOSBatteryView: View {
         else { return .red }
     }
     
+    private var batteryGradient: LinearGradient {
+        switch charge {
+        case 80...100:
+            return LinearGradient(
+                colors: [Color.green.opacity(0.8), Color.green],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        case 50...79:
+            return LinearGradient(
+                colors: [Color.green.opacity(0.6), Color.green],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        case 20...49:
+            return LinearGradient(
+                colors: [Color.orange.opacity(0.8), Color.orange],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        default:
+            return LinearGradient(
+                colors: [Color.red.opacity(0.8), Color.red],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        }
+    }
+    
     private var chargingStatusInfo: (text: String, icon: String, color: Color)? {
         guard let status = status else { return nil }
         
@@ -596,72 +614,157 @@ struct MacOSBatteryView: View {
     }
     
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             HStack {
-                Text("Battery")
-                    .font(.headline)
-                    .fontWeight(.medium)
-                
-                Spacer()
-                
-                Text("\(Int(charge))%")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(batteryColor)
-                    .monospacedDigit()
-            }
-            
-            ProgressView(value: charge, total: 100)
-                .progressViewStyle(.linear)
-                .tint(batteryColor)
-                .background(.quaternary, in: Capsule())
-            
-            // Charging status and runtime info
-            HStack(spacing: 16) {
-                // Charging status
-                if let chargingInfo = chargingStatusInfo {
-                    HStack(spacing: 4) {
-                        Image(systemName: chargingInfo.icon)
-                            .font(.caption)
-                            .foregroundStyle(chargingInfo.color)
-                        
-                        Text(chargingInfo.text)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundStyle(chargingInfo.color)
-                    }
+                HStack(spacing: 6) {
+                    Image(systemName: "battery.100")
+                        .font(.title3)
+                        .foregroundStyle(batteryColor)
+                    
+                    Text("Battery")
+                        .font(.headline)
+                        .fontWeight(.medium)
                 }
                 
                 Spacer()
                 
-                // Runtime
+                Text("\(Int(charge))%")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundStyle(batteryColor)
+                    .monospacedDigit()
+            }
+            
+            // Custom Progress Bar
+            ZStack(alignment: .leading) {
+                // Background track
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(.quaternary.opacity(0.3))
+                    .frame(height: 12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(.separator.opacity(0.2), lineWidth: 0.5)
+                    )
+                
+                // Progress fill with gradient
+                GeometryReader { geometry in
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(batteryGradient)
+                        .frame(width: max(8, geometry.size.width * (charge / 100)), height: 12)
+                        .animation(.easeInOut(duration: 0.5), value: charge)
+                        .overlay(
+                            // Subtle highlight for 3D effect
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white.opacity(0.3),
+                                            Color.white.opacity(0.1),
+                                            Color.clear
+                                        ],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .frame(width: max(8, geometry.size.width * (charge / 100)), height: 12)
+                        )
+                    
+                    // Charging animation overlay
+                    if let chargingInfo = chargingStatusInfo, chargingInfo.text == "Charging" {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.0),
+                                        Color.white.opacity(0.4),
+                                        Color.white.opacity(0.0)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: 30, height: 12)
+                            .offset(x: -15)
+                            .animation(
+                                .linear(duration: 1.5)
+                                    .repeatForever(autoreverses: false),
+                                value: chargingInfo.text == "Charging"
+                            )
+                            .mask(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .frame(width: max(8, geometry.size.width * (charge / 100)), height: 12)
+                            )
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 12)
+            
+            // Battery status info
+            HStack(spacing: 16) {
+                // Charging status with enhanced styling
+                if let chargingInfo = chargingStatusInfo {
+                    HStack(spacing: 6) {
+                        Image(systemName: chargingInfo.icon)
+                            .font(.caption)
+                            .foregroundStyle(chargingInfo.color)
+                            .symbolEffect(.pulse, isActive: chargingInfo.text == "Charging")
+                        
+                        Text(chargingInfo.text)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(chargingInfo.color)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(chargingInfo.color.opacity(0.1), in: Capsule())
+                }
+                
+                Spacer()
+                
+                // Runtime with enhanced styling
                 if let status = status, let formattedRuntime = status.formattedRuntime {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
+                    HStack(spacing: 6) {
+                        Image(systemName: formattedRuntime == "∞" ? "infinity" : "clock")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         
                         Text(formattedRuntime)
                             .font(.caption)
+                            .fontWeight(.semibold)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.secondary.opacity(0.1), in: Capsule())
                 } else if let runtime = runtime, runtime > 0 {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Image(systemName: "clock")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         
                         Text("\(runtime) min")
                             .font(.caption)
+                            .fontWeight(.semibold)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.secondary.opacity(0.1), in: Capsule())
                 }
             }
         }
-        .padding(16)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.separator.opacity(0.3), lineWidth: 0.5)
+                )
+        )
     }
 }
 
