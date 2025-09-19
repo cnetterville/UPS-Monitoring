@@ -82,47 +82,6 @@ struct MacOSSettingsView: View {
                     } footer: {
                         Text("Automatically monitors all devices every 30 seconds when enabled.")
                     }
-                    
-                    Section {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
-                                GridRow {
-                                    Text("Protocol")
-                                        .fontWeight(.medium)
-                                    Text("Default Port")
-                                        .fontWeight(.medium)
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                
-                                Divider()
-                                
-                                GridRow {
-                                    Text("SNMP v1")
-                                    Text("161")
-                                        .monospacedDigit()
-                                }
-                                
-                                GridRow {
-                                    Text("NUT (Network UPS Tools)")
-                                    Text("3493")
-                                        .monospacedDigit()
-                                }
-                            }
-                            
-                            if hasWrongPorts {
-                                Button("Fix Port Configuration") {
-                                    fixPortConfiguration()
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-                        }
-                    } header: {
-                        Text("Connection Settings")
-                    } footer: {
-                        Text("Ensure your devices are configured with the correct ports for their protocol type.")
-                    }
                 }
             }
             .formStyle(.grouped)
@@ -132,26 +91,6 @@ struct MacOSSettingsView: View {
         .frame(width: 550, height: 600)
         .sheet(isPresented: $showingAddDevice) {
             MacOSAddDeviceView(monitoringService: monitoringService)
-        }
-    }
-    
-    private var hasWrongPorts: Bool {
-        monitoringService.devices.contains { device in
-            (device.connectionType == .snmp && device.port != 161) ||
-            (device.connectionType == .nut && device.port != 3493)
-        }
-    }
-    
-    private func fixPortConfiguration() {
-        for device in monitoringService.devices {
-            var updatedDevice = device
-            if device.connectionType == .snmp && device.port != 161 {
-                updatedDevice.port = 161
-                monitoringService.updateDevice(updatedDevice)
-            } else if device.connectionType == .nut && device.port != 3493 {
-                updatedDevice.port = 3493
-                monitoringService.updateDevice(updatedDevice)
-            }
         }
     }
     
@@ -169,11 +108,6 @@ struct MacOSDeviceSettingsRow: View {
     @State private var showingEditDevice = false
     @State private var showingConnectivityTest = false
     @State private var showingDebugInfo = false
-    
-    private var hasWrongPort: Bool {
-        (device.connectionType == .snmp && device.port != 161) ||
-        (device.connectionType == .nut && device.port != 3493)
-    }
     
     var body: some View {
         HStack {
@@ -198,14 +132,8 @@ struct MacOSDeviceSettingsRow: View {
                     
                     Text(":\(device.port)")
                         .font(.caption)
-                        .foregroundStyle(hasWrongPort ? .orange : .secondary)
+                        .foregroundStyle(.secondary)
                         .monospacedDigit()
-                    
-                    if hasWrongPort {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
                 }
             }
             
@@ -333,12 +261,6 @@ struct MacOSAddDeviceView: View {
             LabeledContent("Connection Type") {
                 connectionTypePicker
             }
-            
-            LabeledContent("Port") {
-                TextField("Port", value: $port, format: .number)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 100)
-            }
         }
     }
     
@@ -350,6 +272,7 @@ struct MacOSAddDeviceView: View {
         }
         .pickerStyle(.segmented)
         .onChange(of: connectionType) { oldValue, newValue in
+            // Automatically set the correct default port when type changes
             port = newValue == .nut ? 3493 : 161
         }
     }
@@ -493,6 +416,10 @@ struct MacOSEditDeviceView: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                        .onChange(of: connectionType) { oldValue, newValue in
+                            // Automatically set the correct default port when type changes
+                            port = newValue == .nut ? 3493 : 161
+                        }
                     }
                     
                     LabeledContent("Port") {

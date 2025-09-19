@@ -15,13 +15,6 @@ class MenuBarManager: ObservableObject {
     private weak var monitoringService: UPSMonitoringService?
     private var cancellables = Set<AnyCancellable>()
     
-    @Published var showDockIcon: Bool {
-        didSet {
-            UserDefaults.standard.set(showDockIcon, forKey: "ShowDockIcon")
-            updateDockIconVisibility()
-        }
-    }
-    
     @Published var launchAtLogin: Bool {
         didSet {
             UserDefaults.standard.set(launchAtLogin, forKey: "LaunchAtLogin")
@@ -34,11 +27,11 @@ class MenuBarManager: ObservableObject {
     
     private init() {
         // Load preferences from UserDefaults
-        self.showDockIcon = UserDefaults.standard.object(forKey: "ShowDockIcon") as? Bool ?? true
         self.launchAtLogin = UserDefaults.standard.object(forKey: "LaunchAtLogin") as? Bool ?? false
         
         setupMenuBar()
-        updateDockIconVisibility()
+        // Always run as accessory app (no dock icon)
+        NSApp.setActivationPolicy(.accessory)
         
         // Set initial login item status
         if launchAtLogin {
@@ -51,31 +44,6 @@ class MenuBarManager: ObservableObject {
         observeUPSStatus()
         updateMenuBarIcon()
         updateMenu()
-    }
-    
-    // Public method for AppDelegate to check dock preference
-    func shouldShowDockIcon() -> Bool {
-        return showDockIcon
-    }
-    
-    // Public method for when window is shown - temporarily show dock icon
-    func windowWillShow() {
-        NSApp.setActivationPolicy(.regular)
-    }
-    
-    // Public method for when window is closed - respect user preference
-    func windowDidClose() {
-        updateDockIconVisibility()
-    }
-    
-    private func updateDockIconVisibility() {
-        DispatchQueue.main.async {
-            if self.showDockIcon {
-                NSApp.setActivationPolicy(.regular)
-            } else {
-                NSApp.setActivationPolicy(.accessory)
-            }
-        }
     }
     
     private func updateLoginItem() {
@@ -143,11 +111,6 @@ class MenuBarManager: ObservableObject {
             
             // Preferences submenu
             let preferencesSubmenu = NSMenu()
-            
-            // Dock icon toggle
-            let dockIconItem = NSMenuItem(title: "Show Dock Icon", action: #selector(toggleDockIcon), keyEquivalent: "")
-            dockIconItem.target = self
-            preferencesSubmenu.addItem(dockIconItem)
             
             // Launch at login toggle  
             let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
@@ -245,12 +208,6 @@ class MenuBarManager: ObservableObject {
         if let preferencesMenuItem = menu.items.first(where: { $0.title == "Preferences" }),
            let preferencesSubmenu = preferencesMenuItem.submenu {
             
-            // Update dock icon toggle
-            if let dockIconItem = preferencesSubmenu.items.first(where: { $0.title.contains("Dock Icon") }) {
-                dockIconItem.title = showDockIcon ? "Hide Dock Icon" : "Show Dock Icon"
-                dockIconItem.state = showDockIcon ? .on : .off
-            }
-            
             // Update launch at login toggle
             if let loginItem = preferencesSubmenu.items.first(where: { $0.title == "Launch at Login" }) {
                 loginItem.state = launchAtLogin ? .on : .off
@@ -258,7 +215,7 @@ class MenuBarManager: ObservableObject {
         }
         
         // Clear existing device items (keep the fixed items)
-        let fixedItemsCount = 6 // Status, separator, Show App, separator, Preferences, separator
+        let fixedItemsCount = 5 // Status, separator, Show App, separator, Preferences, separator
         while menu.items.count > fixedItemsCount + 1 { // +1 for quit item
             menu.removeItem(at: fixedItemsCount)
         }
@@ -425,21 +382,7 @@ class MenuBarManager: ObservableObject {
     }
     
     @objc private func showApp() {
-        // Temporarily show dock icon when showing the main window
-        windowWillShow()
-        NSApp.activate(ignoringOtherApps: true)
-        
-        // Find and show the main window
-        for window in NSApp.windows {
-            if window.contentView is NSHostingView<ContentView> || window.title.contains("UPS Monitoring") {
-                window.makeKeyAndOrderFront(nil)
-                return
-            }
-        }
-    }
-    
-    @objc private func toggleDockIcon() {
-        showDockIcon.toggle()
+        WindowManager.shared.showMainWindow()
     }
     
     @objc private func toggleLaunchAtLogin() {

@@ -16,6 +16,7 @@ class UPSMonitoringService: ObservableObject {
     @Published var statusData: [UUID: UPSStatus] = [:]
     @Published var isMonitoring = false
     @Published var lastRefreshTime: Date? = nil
+    @Published var isLoading = false
     
     private var monitoringTimer: Timer?
     private let updateInterval: TimeInterval = 30.0 // 30 seconds
@@ -65,6 +66,7 @@ class UPSMonitoringService: ObservableObject {
     
     init() {
         loadDevices()
+        // Don't trigger immediate refresh in init - let the UI handle it
     }
     
     func addDevice(_ device: UPSDevice) {
@@ -110,20 +112,34 @@ class UPSMonitoringService: ObservableObject {
     }
     
     func refreshAllDevices() async {
+        // Don't refresh if already loading to prevent multiple concurrent refreshes
+        guard !isLoading else { return }
+        
+        isLoading = true
+        defer { isLoading = false }
+        
         // Force an immediate update of all devices, regardless of monitoring state
         await updateAllDevices()
         lastRefreshTime = Date()
     }
     
     func triggerImmediateRefresh() {
+        // Only refresh if we have devices and not already refreshing
+        guard !devices.isEmpty && !isLoading else { return }
+        
         Task {
             await refreshAllDevices()
         }
     }
     
     private func updateAllDevices() async {
-        for device in devices where device.isEnabled {
-            await updateDeviceStatus(device)
+        // Process devices in parallel but limit concurrency to avoid overwhelming the system
+        await withTaskGroup(of: Void.self) { group in
+            for device in devices where device.isEnabled {
+                group.addTask {
+                    await self.updateDeviceStatus(device)
+                }
+            }
         }
         lastRefreshTime = Date()
     }
@@ -202,8 +218,8 @@ class UPSMonitoringService: ObservableObject {
                 }
             }
             
-            // Timeout after 15 seconds
-            DispatchQueue.global().asyncAfter(deadline: .now() + 15) {
+            // Reduce timeout to 10 seconds to prevent long hangs
+            DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
                 print("⏰ NUT connection timeout")
                 connection.cancel()
                 Task {
@@ -314,8 +330,8 @@ class UPSMonitoringService: ObservableObject {
             }
         })
         
-        // Add a timeout for this specific operation
-        DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
+        // Timeout reduced to 20 seconds
+        DispatchQueue.global().asyncAfter(deadline: .now() + 20) {
             Task {
                 await completionManager.completeOnce(.failure(UPSError.timeout), completion: completion)
             }

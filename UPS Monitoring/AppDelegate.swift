@@ -9,30 +9,31 @@ import SwiftUI
 import AppKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Hide the window on startup - we want the app to start in menu bar only
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NSApp.windows.forEach { window in
+                window.orderOut(nil)
+            }
+        }
+    }
+    
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Don't quit the app when the last window is closed - keep running in menu bar
-        
-        // Let MenuBarManager handle dock icon visibility based on user preference
-        MenuBarManager.shared.windowDidClose()
-        
         return false
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // When app icon is clicked in dock (if visible), show the main window
+        // When app is reopened, show the main window
         if !flag {
-            // Let MenuBarManager handle showing the window properly
-            MenuBarManager.shared.windowWillShow()
-            NSApp.activate(ignoringOtherApps: true)
-            
-            // Find and show the main window
-            for window in NSApp.windows {
-                if window.contentView is NSHostingView<ContentView> || window.title.contains("UPS Monitoring") {
-                    window.makeKeyAndOrderFront(nil)
-                    return true
-                }
-            }
+            showMainWindow()
         }
         return true
+    }
+    
+    // Public method that MenuBarManager can call to show the main window
+    func showMainWindow() {
+        WindowManager.shared.showMainWindow()
     }
 }

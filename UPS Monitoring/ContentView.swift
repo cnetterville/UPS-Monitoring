@@ -23,21 +23,33 @@ struct ContentView: View {
                     
                     Spacer()
                     
-                    Button {
-                        isRefreshing = true
-                        Task {
-                            await monitoringService.refreshAllDevices()
-                            isRefreshing = false
+                    HStack(spacing: 8) {
+                        Button {
+                            showingSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .foregroundStyle(.secondary)
                         }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                            .animation(.linear(duration: 1).repeatWhile(isRefreshing), value: isRefreshing)
+                        .buttonStyle(.plain)
+                        .help("Settings")
+                        .keyboardShortcut(",", modifiers: .command)
+                        
+                        Button {
+                            isRefreshing = true
+                            Task {
+                                await monitoringService.refreshAllDevices()
+                                isRefreshing = false
+                            }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                                .animation(.linear(duration: 1).repeatWhile(isRefreshing), value: isRefreshing)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isRefreshing || monitoringService.isLoading)
+                        .help("Refresh all devices")
+                        .keyboardShortcut("r", modifiers: .command)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isRefreshing)
-                    .help("Refresh all devices")
-                    .keyboardShortcut("r", modifiers: .command)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
@@ -55,13 +67,26 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 32)
                 } else {
+                    // Show loading indicator if service is loading
+                    if monitoringService.isLoading {
+                        HStack {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Loading devices...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                    }
+                    
                     List(monitoringService.devices) { device in
                         MacOSSidebarDeviceRow(
                             device: device,
-                            status: monitoringService.statusData[device.id]
+                            status: monitoringService.statusData[device.id],
+                            isLoading: monitoringService.isLoading
                         )
                     }
-                    .listStyle(.sidebar)
                 }
                 
                 Spacer()
@@ -89,13 +114,6 @@ struct ContentView: View {
                                 .foregroundStyle(.tertiary)
                         }
                     }
-                    
-                    Button("Settings") {
-                        showingSettings = true
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .keyboardShortcut(",", modifiers: .command)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
@@ -126,20 +144,18 @@ struct ContentView: View {
             // Set up menu bar manager with monitoring service
             MenuBarManager.shared.setMonitoringService(monitoringService)
             
-            // Always trigger immediate refresh when view appears
-            monitoringService.triggerImmediateRefresh()
-            
-            // Start monitoring if we have devices and monitoring is not running
-            if !monitoringService.devices.isEmpty && !monitoringService.isMonitoring {
-                monitoringService.startMonitoring()
+            // Only start monitoring and refresh if we have devices
+            if !monitoringService.devices.isEmpty {
+                // Start monitoring first (this will trigger initial refresh)
+                if !monitoringService.isMonitoring {
+                    monitoringService.startMonitoring()
+                }
             }
+            // Don't call triggerImmediateRefresh() here - let startMonitoring handle it
         }
         .onDisappear {
             // Don't stop monitoring when ContentView disappears since the app continues running in menu bar
             // monitoringService.stopMonitoring()
-            
-            // Notify menu bar manager that window is closing
-            MenuBarManager.shared.windowDidClose()
         }
         .frame(minWidth: 900, minHeight: 650)
     }
@@ -148,13 +164,20 @@ struct ContentView: View {
 struct MacOSSidebarDeviceRow: View {
     let device: UPSDevice
     let status: UPSStatus?
+    let isLoading: Bool
     
     var body: some View {
         HStack(spacing: 12) {
             // Status indicator
-            Circle()
-                .fill(status?.isOnline == true ? .green : .red)
-                .frame(width: 8, height: 8)
+            if isLoading {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 8, height: 8)
+            } else {
+                Circle()
+                    .fill(status?.isOnline == true ? .green : .red)
+                    .frame(width: 8, height: 8)
+            }
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.name)
@@ -170,7 +193,11 @@ struct MacOSSidebarDeviceRow: View {
             
             Spacer(minLength: 0)
             
-            if let batteryCharge = status?.batteryCharge {
+            if isLoading {
+                Text("Loading...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let batteryCharge = status?.batteryCharge {
                 Text("\(Int(batteryCharge))%")
                     .font(.caption)
                     .fontWeight(.medium)
