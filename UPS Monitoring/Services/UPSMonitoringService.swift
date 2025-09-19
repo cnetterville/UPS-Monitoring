@@ -425,7 +425,6 @@ class UPSMonitoringService: ObservableObject {
                 
                 if let outputVoltageStr = finalResponses["output.voltage"], let outputVoltage = Double(outputVoltageStr) {
                     // Check if we also have nominal voltage
-                    let nominalVoltage = finalResponses["output.voltage.nominal"].flatMap { Double($0) }
                     let inputVoltage = finalResponses["input.voltage"].flatMap { Double($0) }
                     
                     // Smart voltage selection logic: use input voltage if output differs significantly
@@ -518,13 +517,13 @@ class UPSMonitoringService: ObservableObject {
             }
             
             connection.send(content: data, completion: .contentProcessed { error in
-                if let error = error {
+                if error != nil {
                     sendNextCommand()
                     return
                 }
                 
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, error in
-                    if let error = error {
+                    if error != nil {
                         sendNextCommand()
                         return
                     }
