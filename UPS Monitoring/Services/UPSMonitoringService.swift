@@ -65,6 +65,10 @@ class UPSMonitoringService: ObservableObject {
     
     init() {
         loadDevices()
+        
+        // Initialize notification service with this monitoring service
+        NotificationService.shared.initialize(with: self)
+        
         // Don't trigger immediate refresh in init - let the UI handle it
     }
     

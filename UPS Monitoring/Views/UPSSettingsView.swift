@@ -13,6 +13,7 @@ struct MacOSSettingsView: View {
     @ObservedObject var monitoringService: UPSMonitoringService
     @Environment(\.dismiss) private var dismiss
     @State private var showingAddDevice = false
+    @State private var selectedTab = "devices"
     
     var body: some View {
         VStack(spacing: 0) {
@@ -35,63 +36,146 @@ struct MacOSSettingsView: View {
             
             Divider()
             
-            // Content
-            Form {
-                Section {
-                    ForEach(monitoringService.devices) { device in
-                        MacOSDeviceSettingsRow(device: device, monitoringService: monitoringService)
+            HStack(spacing: 0) {
+                // Sidebar
+                VStack(alignment: .leading, spacing: 0) {
+                    Button(action: { selectedTab = "devices" }) {
+                        Label("Devices", systemImage: "poweroutlet.type.a")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(selectedTab == "devices" ? Color.accentColor.opacity(0.2) : Color.clear)
+                            .contentShape(Rectangle())
                     }
-                    .onDelete(perform: deleteDevices)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(selectedTab == "devices" ? .primary : .secondary)
                     
-                    if monitoringService.devices.count < 2 {
-                        Button(action: { showingAddDevice = true }) {
-                            Label("Add UPS Device", systemImage: "plus")
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(.blue)
+                    Button(action: { selectedTab = "notifications" }) {
+                        Label("Notifications", systemImage: "bell")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(selectedTab == "notifications" ? Color.accentColor.opacity(0.2) : Color.clear)
+                            .contentShape(Rectangle())
                     }
-                } header: {
+                    .buttonStyle(.plain)
+                    .foregroundStyle(selectedTab == "notifications" ? .primary : .secondary)
+                    
+                    Spacer()
+                }
+                .frame(width: 180)
+                .background(.regularMaterial)
+                
+                Divider()
+                
+                // Content area
+                VStack {
+                    switch selectedTab {
+                    case "devices":
+                        devicesSettingsView
+                    case "notifications":
+                        NotificationSettingsView()
+                    default:
+                        devicesSettingsView
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.background)
+            }
+        }
+        .frame(width: 750, height: 600)
+        .sheet(isPresented: $showingAddDevice) {
+            MacOSAddDeviceView(monitoringService: monitoringService)
+        }
+    }
+    
+    private var devicesSettingsView: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                // UPS Devices Section
+                VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Text("UPS Devices")
+                            .font(.title3)
+                            .fontWeight(.semibold)
                         Spacer()
                         Text("\(monitoringService.devices.count) of 2")
                             .foregroundStyle(.secondary)
+                            .font(.subheadline)
                     }
-                } footer: {
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    
+                    VStack(spacing: 12) {
+                        ForEach(monitoringService.devices) { device in
+                            MacOSDeviceSettingsRow(device: device, monitoringService: monitoringService)
+                                .padding(.horizontal, 24)
+                        }
+                        
+                        if monitoringService.devices.count < 2 {
+                            HStack {
+                                Button(action: { showingAddDevice = true }) {
+                                    Label("Add UPS Device", systemImage: "plus")
+                                }
+                                .buttonStyle(.borderless)
+                                .foregroundStyle(.blue)
+                                
+                                Spacer()
+                            }
+                            .padding(.horizontal, 24)
+                        }
+                    }
+                    
                     if monitoringService.devices.count >= 2 {
                         Text("Maximum of 2 devices supported.")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
+                            .padding(.horizontal, 24)
                     }
                 }
                 
                 if !monitoringService.devices.isEmpty {
-                    Section {
-                        Toggle("Automatic Monitoring", isOn: Binding(
-                            get: { monitoringService.isMonitoring },
-                            set: { newValue in
-                                if newValue {
-                                    monitoringService.startMonitoring()
-                                } else {
-                                    monitoringService.stopMonitoring()
-                                }
-                            }
-                        ))
-                        .toggleStyle(.switch)
-                    } header: {
+                    Divider()
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 24)
+                    
+                    // Monitoring Section
+                    VStack(alignment: .leading, spacing: 16) {
                         Text("Monitoring")
-                    } footer: {
-                        Text("Automatically monitors all devices every 30 seconds when enabled.")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 24)
+                        
+                        VStack(spacing: 12) {
+                            HStack {
+                                Toggle("Automatic Monitoring", isOn: Binding(
+                                    get: { monitoringService.isMonitoring },
+                                    set: { newValue in
+                                        if newValue {
+                                            monitoringService.startMonitoring()
+                                        } else {
+                                            monitoringService.stopMonitoring()
+                                        }
+                                    }
+                                ))
+                                .toggleStyle(.switch)
+                                
+                                Spacer()
+                            }
+                            .padding(.horizontal, 24)
+                            
+                            Text("Automatically monitors all devices every 30 seconds when enabled.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 24)
+                        }
                     }
                 }
+                
+                Spacer(minLength: 24)
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .background(.background)
         }
-        .frame(width: 550, height: 600)
-        .sheet(isPresented: $showingAddDevice) {
-            MacOSAddDeviceView(monitoringService: monitoringService)
-        }
+        .background(.background)
     }
     
     private func deleteDevices(offsets: IndexSet) {

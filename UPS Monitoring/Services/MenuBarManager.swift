@@ -44,6 +44,9 @@ class MenuBarManager: ObservableObject {
         observeUPSStatus()
         updateMenuBarIcon()
         updateMenu()
+        
+        // Reset notification data when monitoring service changes
+        NotificationService.shared.resetNotificationData()
     }
     
     private func updateLoginItem() {
@@ -116,6 +119,11 @@ class MenuBarManager: ObservableObject {
             let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
             loginItem.target = self
             preferencesSubmenu.addItem(loginItem)
+            
+            // Notifications toggle
+            let notificationsItem = NSMenuItem(title: "Enable Notifications", action: #selector(toggleNotifications), keyEquivalent: "")
+            notificationsItem.target = self
+            preferencesSubmenu.addItem(notificationsItem)
             
             let preferencesMenuItem = NSMenuItem(title: "Preferences", action: nil, keyEquivalent: "")
             preferencesMenuItem.submenu = preferencesSubmenu
@@ -211,6 +219,11 @@ class MenuBarManager: ObservableObject {
             // Update launch at login toggle
             if let loginItem = preferencesSubmenu.items.first(where: { $0.title == "Launch at Login" }) {
                 loginItem.state = launchAtLogin ? .on : .off
+            }
+            
+            // Update notifications toggle
+            if let notificationsItem = preferencesSubmenu.items.first(where: { $0.title == "Enable Notifications" }) {
+                notificationsItem.state = NotificationService.shared.notificationsEnabled ? .on : .off
             }
         }
         
@@ -387,6 +400,10 @@ class MenuBarManager: ObservableObject {
     
     @objc private func toggleLaunchAtLogin() {
         launchAtLogin.toggle()
+    }
+    
+    @objc private func toggleNotifications() {
+        NotificationService.shared.notificationsEnabled.toggle()
     }
     
     @objc private func quitApp() {

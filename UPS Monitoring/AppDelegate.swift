@@ -11,6 +11,11 @@ import AppKit
 class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Initialize notification service
+        Task { @MainActor in
+            _ = NotificationService.shared
+        }
+        
         // Hide the window on startup - we want the app to start in menu bar only
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             NSApp.windows.forEach { window in
