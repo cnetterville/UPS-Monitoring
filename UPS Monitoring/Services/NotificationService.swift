@@ -52,6 +52,16 @@ class NotificationService: NSObject, ObservableObject {
     
     // Track previous status to detect changes
     private var previousStatusData: [UUID: UPSStatus] = [:]
+    
+    // Debouncing for online/offline status
+    private var deviceOfflineTimers: [UUID: Timer] = [:]
+    private var deviceOnlineTimers: [UUID: Timer] = [:]
+    private var stableStatusData: [UUID: UPSStatus] = [:]
+    
+    // Timing constants (in seconds)
+    private let offlineDebounceTime: TimeInterval = 30.0 // Device must be offline for 30 seconds
+    private let onlineDebounceTime: TimeInterval = 10.0  // Device must be online for 10 seconds
+    
     private var cancellables = Set<AnyCancellable>()
     
     private override init() {
@@ -109,68 +119,144 @@ class NotificationService: NSObject, ObservableObject {
         for device in devices where device.isEnabled {
             guard let currentStatus = currentStatusData[device.id] else { continue }
             let previousStatus = previousStatusData[device.id]
+            let stableStatus = stableStatusData[device.id]
             
-            // Check for device going online/offline
+            // Handle online/offline status changes with debouncing
+            handleOnlineOfflineStatusChange(device: device, currentStatus: currentStatus, stableStatus: stableStatus)
+            
+            // For other status changes, use the stable status if available, otherwise current
+            let statusToCompare = stableStatus ?? currentStatus
+            
             if let previous = previousStatus {
-                if !previous.isOnline && currentStatus.isOnline {
-                    sendDeviceOnlineNotification(device: device)
-                } else if previous.isOnline && !currentStatus.isOnline && notifyOnDeviceOffline {
-                    sendDeviceOfflineNotification(device: device)
-                }
-                
                 // Check for power source changes (going on battery or returning to normal)
-                if let prevSource = previous.outputSource, let currentSource = currentStatus.outputSource {
+                if let prevSource = previous.outputSource, let currentSource = statusToCompare.outputSource {
                     if prevSource != "Battery" && currentSource == "Battery" && notifyOnBattery {
-                        sendOnBatteryNotification(device: device, status: currentStatus)
+                        sendOnBatteryNotification(device: device, status: statusToCompare)
                     } else if prevSource == "Battery" && currentSource != "Battery" && notifyOnPowerRestored {
-                        sendPowerRestoredNotification(device: device, status: currentStatus)
+                        sendPowerRestoredNotification(device: device, status: statusToCompare)
                     }
                 }
                 
                 // Check for low battery (only if charge decreased)
                 if let prevCharge = previous.batteryCharge,
-                   let currentCharge = currentStatus.batteryCharge,
+                   let currentCharge = statusToCompare.batteryCharge,
                    notifyOnLowBattery {
                     
                     // Send notification if we just crossed the threshold (going down)
                     if prevCharge > lowBatteryThreshold && currentCharge <= lowBatteryThreshold {
-                        sendLowBatteryNotification(device: device, status: currentStatus)
+                        sendLowBatteryNotification(device: device, status: statusToCompare)
                     }
                 }
                 
                 // Check for critical alarms
                 if let prevAlarms = previous.alarmsPresent,
-                   let currentAlarms = currentStatus.alarmsPresent,
+                   let currentAlarms = statusToCompare.alarmsPresent,
                    notifyOnCriticalAlarms {
                     
                     if prevAlarms == 0 && currentAlarms > 0 {
-                        sendCriticalAlarmNotification(device: device, status: currentStatus)
+                        sendCriticalAlarmNotification(device: device, status: statusToCompare)
                     }
                 }
                 
             } else {
                 // First time seeing this device - check if it's in a critical state
-                if currentStatus.isOnline {
-                    if let charge = currentStatus.batteryCharge,
+                // Only use stable status for first-time checks if device has been stable
+                if statusToCompare.isOnline {
+                    if let charge = statusToCompare.batteryCharge,
                        charge <= lowBatteryThreshold && notifyOnLowBattery {
-                        sendLowBatteryNotification(device: device, status: currentStatus)
+                        sendLowBatteryNotification(device: device, status: statusToCompare)
                     }
                     
-                    if let outputSource = currentStatus.outputSource,
+                    if let outputSource = statusToCompare.outputSource,
                        outputSource == "Battery" && notifyOnBattery {
-                        sendOnBatteryNotification(device: device, status: currentStatus)
+                        sendOnBatteryNotification(device: device, status: statusToCompare)
                     }
                     
-                    if let alarms = currentStatus.alarmsPresent,
+                    if let alarms = statusToCompare.alarmsPresent,
                        alarms > 0 && notifyOnCriticalAlarms {
-                        sendCriticalAlarmNotification(device: device, status: currentStatus)
+                        sendCriticalAlarmNotification(device: device, status: statusToCompare)
                     }
                 }
             }
         }
         
-        // Update previous status
-        previousStatusData = currentStatusData
+        // Update previous status using stable status where available
+        for device in devices where device.isEnabled {
+            if let currentStatus = currentStatusData[device.id] {
+                if let stableStatus = stableStatusData[device.id] {
+                    previousStatusData[device.id] = stableStatus
+                } else {
+                    previousStatusData[device.id] = currentStatus
+                }
+            }
+        }
+    }
+    
+    private func handleOnlineOfflineStatusChange(device: UPSDevice, currentStatus: UPSStatus, stableStatus: UPSStatus?) {
+        let deviceId = device.id
+        let isCurrentlyOnline = currentStatus.isOnline
+        let wasStableOnline = stableStatus?.isOnline ?? isCurrentlyOnline
+        
+        // If current status matches stable status, no need to start timers
+        if isCurrentlyOnline == wasStableOnline {
+            // Cancel any pending timers since status is stable
+            deviceOfflineTimers[deviceId]?.invalidate()
+            deviceOfflineTimers.removeValue(forKey: deviceId)
+            deviceOnlineTimers[deviceId]?.invalidate()
+            deviceOnlineTimers.removeValue(forKey: deviceId)
+            return
+        }
+        
+        if isCurrentlyOnline && !wasStableOnline {
+            // Device appears to be coming online
+            // Cancel offline timer if it exists
+            deviceOfflineTimers[deviceId]?.invalidate()
+            deviceOfflineTimers.removeValue(forKey: deviceId)
+            
+            // Start online confirmation timer if not already running
+            if deviceOnlineTimers[deviceId] == nil {
+                deviceOnlineTimers[deviceId] = Timer.scheduledTimer(withTimeInterval: onlineDebounceTime, repeats: false) { [weak self] _ in
+                    guard let self = self else { return }
+                    
+                    Task { @MainActor in
+                        // Confirm device is still online and update stable status
+                        self.stableStatusData[deviceId] = currentStatus
+                        
+                        // Send notification if we have a previous stable status that was offline
+                        if let previousStable = stableStatus, !previousStable.isOnline {
+                            self.sendDeviceOnlineNotification(device: device)
+                        }
+                        
+                        // Clean up timer
+                        self.deviceOnlineTimers.removeValue(forKey: deviceId)
+                    }
+                }
+            }
+            
+        } else if !isCurrentlyOnline && wasStableOnline {
+            // Device appears to be going offline
+            // Cancel online timer if it exists
+            deviceOnlineTimers[deviceId]?.invalidate()
+            deviceOnlineTimers.removeValue(forKey: deviceId)
+            
+            // Start offline confirmation timer if not already running
+            if deviceOfflineTimers[deviceId] == nil && notifyOnDeviceOffline {
+                deviceOfflineTimers[deviceId] = Timer.scheduledTimer(withTimeInterval: offlineDebounceTime, repeats: false) { [weak self] _ in
+                    guard let self = self else { return }
+                    
+                    Task { @MainActor in
+                        // Confirm device is still offline and update stable status
+                        self.stableStatusData[deviceId] = currentStatus
+                        
+                        // Send offline notification
+                        self.sendDeviceOfflineNotification(device: device)
+                        
+                        // Clean up timer
+                        self.deviceOfflineTimers.removeValue(forKey: deviceId)
+                    }
+                }
+            }
+        }
     }
     
     // MARK: - Notification Methods
@@ -312,6 +398,13 @@ class NotificationService: NSObject, ObservableObject {
     
     func resetNotificationData() {
         previousStatusData.removeAll()
+        stableStatusData.removeAll()
+        
+        // Cancel all pending timers
+        deviceOfflineTimers.values.forEach { $0.invalidate() }
+        deviceOnlineTimers.values.forEach { $0.invalidate() }
+        deviceOfflineTimers.removeAll()
+        deviceOnlineTimers.removeAll()
     }
 }
 
