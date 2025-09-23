@@ -14,73 +14,74 @@ struct MacOSSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingAddDevice = false
     @State private var selectedTab = "devices"
+    @State private var hoveredCard: String? = nil
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("Settings")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-                
-                Button("Done") {
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-            }
-            .padding(20)
-            .background(.regularMaterial)
+        ZStack {
+            // Liquid Glass Background
+            LiquidGlassBackground()
             
-            Divider()
-            
-            HStack(spacing: 0) {
-                // Sidebar
-                VStack(alignment: .leading, spacing: 0) {
-                    Button(action: { selectedTab = "devices" }) {
-                        Label("Devices", systemImage: "poweroutlet.type.a")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(selectedTab == "devices" ? Color.accentColor.opacity(0.2) : Color.clear)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(selectedTab == "devices" ? .primary : .secondary)
-                    
-                    Button(action: { selectedTab = "notifications" }) {
-                        Label("Notifications", systemImage: "bell")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(selectedTab == "notifications" ? Color.accentColor.opacity(0.2) : Color.clear)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(selectedTab == "notifications" ? .primary : .secondary)
-                    
-                    Spacer()
-                }
-                .frame(width: 180)
-                .background(.regularMaterial)
-                
-                Divider()
-                
-                // Content area
-                VStack {
-                    switch selectedTab {
-                    case "devices":
-                        devicesSettingsView
-                    case "notifications":
-                        NotificationSettingsView()
-                    default:
-                        devicesSettingsView
+            VStack(spacing: 0) {
+                // Glass Header
+                LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "settings-header") {
+                    HStack {
+                        Text("Settings")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.primary, Color.blue.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        
+                        Spacer()
+                        
+                        LiquidGlassButton("Done", style: .primary) {
+                            dismiss()
+                        }
+                        .keyboardShortcut(.defaultAction)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.background)
+                .padding(20)
+                
+                HStack(spacing: 0) {
+                    // Glass Sidebar
+                    VStack(alignment: .leading, spacing: 0) {
+                        liquidGlassSidebarButton(
+                            title: "Devices",
+                            icon: "poweroutlet.type.a",
+                            isSelected: selectedTab == "devices"
+                        ) {
+                            selectedTab = "devices"
+                        }
+                        
+                        liquidGlassSidebarButton(
+                            title: "Notifications",
+                            icon: "bell",
+                            isSelected: selectedTab == "notifications"
+                        ) {
+                            selectedTab = "notifications"
+                        }
+                        
+                        Spacer()
+                    }
+                    .frame(width: 200)
+                    .padding(.vertical, 20)
+                    
+                    // Content area
+                    VStack {
+                        switch selectedTab {
+                        case "devices":
+                            devicesSettingsView
+                        case "notifications":
+                            NotificationSettingsView()
+                        default:
+                            devicesSettingsView
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
         .frame(width: 750, height: 600)
@@ -89,161 +90,318 @@ struct MacOSSettingsView: View {
         }
     }
     
+    @ViewBuilder
+    private func liquidGlassSidebarButton(
+        title: String,
+        icon: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(
+                        isSelected ?
+                        LinearGradient(
+                            colors: [Color.blue, Color.cyan],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ) :
+                        LinearGradient(
+                            colors: [Color.secondary, Color.secondary.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 16)
+                
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(isSelected ? .primary : .secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.blue.opacity(0.2),
+                                                Color.cyan.opacity(0.1)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.3),
+                                                Color.blue.opacity(0.2)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                            )
+                    }
+                }
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedTab)
+    }
+    
     private var devicesSettingsView: some View {
         ScrollView {
-            VStack(spacing: 0) {
+            VStack(spacing: 20) {
                 // UPS Devices Section
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Text("UPS Devices")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                        Spacer()
-                        Text("\(monitoringService.devices.count) of 2")
-                            .foregroundStyle(.secondary)
-                            .font(.subheadline)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 24)
-                    
-                    VStack(spacing: 12) {
-                        ForEach(monitoringService.devices) { device in
-                            MacOSDeviceSettingsRow(device: device, monitoringService: monitoringService)
-                                .padding(.horizontal, 24)
+                LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "devices-section") {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Text("UPS Devices")
+                                .font(.system(size: 20, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                            
+                            Spacer()
+                            
+                            Text("\(monitoringService.devices.count) of 2")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                                .tracking(0.5)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(.ultraThinMaterial)
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                                        )
+                                )
                         }
                         
-                        if monitoringService.devices.count < 2 {
-                            HStack {
-                                Button(action: { showingAddDevice = true }) {
-                                    Label("Add UPS Device", systemImage: "plus")
-                                }
-                                .buttonStyle(.borderless)
-                                .foregroundStyle(.blue)
-                                
-                                Spacer()
+                        VStack(spacing: 12) {
+                            ForEach(monitoringService.devices) { device in
+                                LiquidGlassDeviceSettingsRow(
+                                    device: device,
+                                    monitoringService: monitoringService,
+                                    hoveredCard: $hoveredCard
+                                )
                             }
-                            .padding(.horizontal, 24)
+                            
+                            if monitoringService.devices.count < 2 {
+                                HStack {
+                                    LiquidGlassButton(
+                                        "Add UPS Device",
+                                        icon: "plus.circle.fill",
+                                        style: .primary
+                                    ) {
+                                        showingAddDevice = true
+                                    }
+                                    
+                                    Spacer()
+                                }
+                            }
                         }
-                    }
-                    
-                    if monitoringService.devices.count >= 2 {
-                        Text("Maximum of 2 devices supported.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 24)
+                        
+                        if monitoringService.devices.count >= 2 {
+                            Text("Maximum of 2 devices supported in this version.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 8)
+                        }
                     }
                 }
                 
                 if !monitoringService.devices.isEmpty {
-                    Divider()
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 24)
-                    
                     // Monitoring Section
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Monitoring")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 24)
-                        
-                        VStack(spacing: 12) {
-                            HStack {
-                                Toggle("Automatic Monitoring", isOn: Binding(
-                                    get: { monitoringService.isMonitoring },
-                                    set: { newValue in
-                                        if newValue {
-                                            monitoringService.startMonitoring()
-                                        } else {
-                                            monitoringService.stopMonitoring()
-                                        }
-                                    }
-                                ))
-                                .toggleStyle(.switch)
-                                
-                                Spacer()
-                            }
-                            .padding(.horizontal, 24)
+                    LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "monitoring-section") {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Monitoring")
+                                .font(.system(size: 20, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
                             
-                            Text("Automatically monitors all devices every 30 seconds when enabled.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 24)
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Automatic Monitoring")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(.primary)
+                                        
+                                        Text("Continuously monitors all devices every 30 seconds")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    LiquidGlassToggle(
+                                        isOn: Binding(
+                                            get: { monitoringService.isMonitoring },
+                                            set: { newValue in
+                                                if newValue {
+                                                    monitoringService.startMonitoring()
+                                                } else {
+                                                    monitoringService.stopMonitoring()
+                                                }
+                                            }
+                                        )
+                                    )
+                                }
+                            }
                         }
                     }
                 }
                 
                 Spacer(minLength: 24)
             }
-        }
-        .background(.background)
-    }
-    
-    private func deleteDevices(offsets: IndexSet) {
-        for offset in offsets {
-            let device = monitoringService.devices[offset]
-            monitoringService.removeDevice(device)
+            .padding(24)
         }
     }
 }
 
-struct MacOSDeviceSettingsRow: View {
+// Remove Debug button for SNMP devices and improve button layout
+struct LiquidGlassDeviceSettingsRow: View {
     let device: UPSDevice
     let monitoringService: UPSMonitoringService
+    @Binding var hoveredCard: String?
     @State private var showingEditDevice = false
     @State private var showingConnectivityTest = false
-    @State private var showingDebugInfo = false
+    @State private var isHovered = false
+    
+    private var cardId: String { "device-settings-\(device.id)" }
     
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 20) {
+            // Device info with glass styling
+            VStack(alignment: .leading, spacing: 8) {
                 Text(device.name)
-                    .font(.body)
-                    .fontWeight(.medium)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
                 
                 HStack(spacing: 8) {
                     Text(device.connectionType.rawValue)
-                        .font(.caption)
-                        .fontWeight(.medium)
+                        .font(.system(size: 10, weight: .bold))
+                        .textCase(.uppercase)
+                        .tracking(0.5)
                         .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.tint.opacity(0.15), in: Capsule())
-                        .foregroundStyle(.tint)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Capsule()
+                                        .stroke(
+                                            LinearGradient(
+                                                colors: [Color.blue, Color.cyan],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            ),
+                                            lineWidth: 0.8
+                                        )
+                                )
+                        )
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.blue, Color.cyan],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                     
-                    Text(device.host)
-                        .font(.caption)
+                    Text("\(device.host):\(device.port)")
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                    
-                    Text(":\(device.port)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                        .lineLimit(1)
                 }
             }
             
-            Spacer()
+            Spacer(minLength: 20)
             
-            HStack(spacing: 8) {
-                if device.connectionType == .snmp {
-                    Button("Debug") {
-                        showingDebugInfo = true
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-                
-                Button("Test") {
+            // Only show Test and Edit buttons (removed Debug button)
+            HStack(spacing: 12) {
+                LiquidGlassButton(
+                    "Test",
+                    icon: "network",
+                    style: .secondary
+                ) {
                     showingConnectivityTest = true
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
                 
-                Button("Edit") {
+                LiquidGlassButton(
+                    "Edit",
+                    icon: "pencil",
+                    style: .secondary
+                ) {
                     showingEditDevice = true
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.ultraThinMaterial)
+                    .opacity(isHovered ? 0.7 : 0.5)
+                
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(isHovered ? 0.15 : 0.1),
+                                Color.white.opacity(0.02)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.3),
+                                Color.blue.opacity(0.2)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.8
+                    )
+            }
+        )
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .shadow(
+            color: Color.black.opacity(isHovered ? 0.1 : 0.05),
+            radius: isHovered ? 8 : 4,
+            x: 0,
+            y: isHovered ? 4 : 2
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .onHover { hovered in
+            isHovered = hovered
+            hoveredCard = hovered ? cardId : nil
         }
         .sheet(isPresented: $showingEditDevice) {
             MacOSEditDeviceView(device: device, monitoringService: monitoringService)
@@ -251,15 +409,15 @@ struct MacOSDeviceSettingsRow: View {
         .sheet(isPresented: $showingConnectivityTest) {
             MacOSConnectivityTestView(device: device)
         }
-        .sheet(isPresented: $showingDebugInfo) {
-            DebugInfoView(device: device)
-        }
     }
 }
+
+// MARK: - Add Device View with Liquid Glass
 
 struct MacOSAddDeviceView: View {
     @ObservedObject var monitoringService: UPSMonitoringService
     @Environment(\.dismiss) private var dismiss
+    @State private var hoveredCard: String? = nil
     
     @State private var name = ""
     @State private var host = ""
@@ -278,72 +436,96 @@ struct MacOSAddDeviceView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            headerView
+        ZStack {
+            LiquidGlassBackground()
             
-            Divider()
-            
-            formView
+            VStack(spacing: 0) {
+                headerView
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        deviceInfoSection
+                        
+                        if connectionType == .nut {
+                            nutConfigSection
+                        } else {
+                            snmpConfigSection
+                        }
+                        
+                        batteryTrackingSection
+                    }
+                    .padding(20)
+                }
+            }
         }
-        .frame(width: 500, height: 550)
+        .frame(width: 500, height: 600)
     }
     
     private var headerView: some View {
-        HStack {
-            Text("Add UPS Device")
-                .font(.title2)
-                .fontWeight(.semibold)
-            
-            Spacer()
-            
-            HStack(spacing: 12) {
-                Button("Cancel") {
-                    dismiss()
-                }
-                .keyboardShortcut(.cancelAction)
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "add-header") {
+            HStack {
+                Text("Add UPS Device")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color.primary, Color.blue.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                 
-                Button("Add Device") {
-                    saveDevice()
-                    dismiss()
+                Spacer()
+                
+                HStack(spacing: 12) {
+                    LiquidGlassButton("Cancel", style: .secondary) {
+                        dismiss()
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    
+                    LiquidGlassButton(
+                        "Add Device",
+                        icon: "plus.circle.fill",
+                        style: isFormValid ? .primary : .secondary
+                    ) {
+                        saveDevice()
+                        dismiss()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!isFormValid)
                 }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!isFormValid)
             }
         }
         .padding(20)
-        .background(.regularMaterial)
-    }
-    
-    private var formView: some View {
-        Form {
-            deviceInfoSection
-            
-            if connectionType == .nut {
-                nutConfigSection
-            } else {
-                snmpConfigSection
-            }
-        }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .background(.background)
     }
     
     private var deviceInfoSection: some View {
-        Section("Device Information") {
-            LabeledContent("Device Name") {
-                TextField("Enter a name for this UPS", text: $name)
-                    .textFieldStyle(.roundedBorder)
-            }
-            
-            LabeledContent("Host/IP Address") {
-                TextField("192.168.1.100", text: $host)
-                    .textFieldStyle(.roundedBorder)
-            }
-            
-            LabeledContent("Connection Type") {
-                connectionTypePicker
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "device-info") {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Device Information")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                VStack(spacing: 12) {
+                    LabeledContent("Device Name") {
+                        TextField("Enter a name for this UPS", text: $name)
+                            .textFieldStyle(GlassTextFieldStyle())
+                    }
+                    
+                    LabeledContent("Host/IP Address") {
+                        TextField("192.168.1.100", text: $host)
+                            .textFieldStyle(GlassTextFieldStyle())
+                    }
+                    
+                    LabeledContent("Connection Type") {
+                        connectionTypePicker
+                    }
+                    
+                    LabeledContent("Port") {
+                        TextField("Port", value: $port, format: .number)
+                            .textFieldStyle(GlassTextFieldStyle())
+                            .frame(maxWidth: 100)
+                    }
+                }
             }
         }
     }
@@ -355,45 +537,102 @@ struct MacOSAddDeviceView: View {
             }
         }
         .pickerStyle(.segmented)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
         .onChange(of: connectionType) { oldValue, newValue in
-            // Automatically set the correct default port when type changes
             port = newValue == .nut ? 3493 : 161
         }
     }
     
     private var nutConfigSection: some View {
-        Section {
-            LabeledContent("UPS Name") {
-                TextField("ups", text: $upsName)
-                    .textFieldStyle(.roundedBorder)
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "nut-config") {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("NUT Configuration")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Text("Network UPS Tools (NUT) configuration for communicating with UPS servers.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                
+                VStack(spacing: 12) {
+                    LabeledContent("UPS Name") {
+                        TextField("ups", text: $upsName)
+                            .textFieldStyle(GlassTextFieldStyle())
+                    }
+                    
+                    LabeledContent("Username") {
+                        TextField("Optional", text: $username)
+                            .textFieldStyle(GlassTextFieldStyle())
+                    }
+                    
+                    LabeledContent("Password") {
+                        SecureField("Optional", text: $password)
+                            .textFieldStyle(GlassTextFieldStyle())
+                    }
+                }
             }
-            
-            LabeledContent("Username") {
-                TextField("Optional", text: $username)
-                    .textFieldStyle(.roundedBorder)
-            }
-            
-            LabeledContent("Password") {
-                SecureField("Optional", text: $password)
-                    .textFieldStyle(.roundedBorder)
-            }
-        } header: {
-            Text("NUT Configuration")
-        } footer: {
-            Text("Network UPS Tools (NUT) configuration for communicating with UPS servers.")
         }
     }
     
     private var snmpConfigSection: some View {
-        Section {
-            LabeledContent("Community String") {
-                TextField("public", text: $community)
-                    .textFieldStyle(.roundedBorder)
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "snmp-config") {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("SNMP Configuration")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Text("SNMP v1 configuration. Most UPS devices use 'public' as the default community string.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                
+                LabeledContent("Community String") {
+                    TextField("public", text: $community)
+                        .textFieldStyle(GlassTextFieldStyle())
+                }
             }
-        } header: {
-            Text("SNMP Configuration")
-        } footer: {
-            Text("SNMP v1 configuration. Most UPS devices use 'public' as the default community string.")
+        }
+    }
+    
+    private var batteryTrackingSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "battery-tracking") {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Battery Tracking")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Text("Optional battery information for replacement planning.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                
+                VStack(spacing: 12) {
+                    LabeledContent("Install Date") {
+                        DatePicker("Battery Install Date", 
+                                 selection: Binding(
+                                    get: { batteryInstallDate ?? Date() },
+                                    set: { batteryInstallDate = $0 }
+                                 ),
+                                 displayedComponents: .date)
+                        .labelsHidden()
+                        .datePickerStyle(.compact)
+                    }
+                    
+                    LabeledContent("Battery Model") {
+                        TextField("Optional", text: $batteryModel)
+                            .textFieldStyle(GlassTextFieldStyle())
+                    }
+                    
+                    LabeledContent("Notes") {
+                        TextField("Optional notes", text: $batteryNotes)
+                            .textFieldStyle(GlassTextFieldStyle())
+                    }
+                }
+            }
         }
     }
     
@@ -415,6 +654,40 @@ struct MacOSAddDeviceView: View {
         monitoringService.addDevice(device)
     }
 }
+
+// MARK: - Glass Text Field Style
+
+struct GlassTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .font(.system(size: 14))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.6)
+                    
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.3),
+                                    Color.blue.opacity(0.1)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+    }
+}
+
+// Rest of the edit and connectivity test views would follow similar patterns...
+// For brevity, keeping the existing implementations but they could be enhanced with glass styling
 
 struct MacOSEditDeviceView: View {
     let device: UPSDevice

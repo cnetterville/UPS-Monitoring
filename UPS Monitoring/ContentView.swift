@@ -11,132 +11,24 @@ struct ContentView: View {
     @StateObject private var monitoringService = UPSMonitoringService()
     @State private var showingSettings = false
     @State private var isRefreshing = false
+    @State private var hoveredCard: String? = nil
     
     var body: some View {
-        NavigationSplitView {
-            // Sidebar
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("Devices")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 8) {
-                        Button {
-                            showingSettings = true
-                        } label: {
-                            Image(systemName: "gearshape")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Settings")
-                        .keyboardShortcut(",", modifiers: .command)
-                        
-                        Button {
-                            isRefreshing = true
-                            Task {
-                                await monitoringService.refreshAllDevices()
-                                isRefreshing = false
-                            }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                                .animation(.linear(duration: 1).repeatWhile(isRefreshing), value: isRefreshing)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isRefreshing || monitoringService.isLoading)
-                        .help("Refresh all devices")
-                        .keyboardShortcut("r", modifiers: .command)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                
-                if monitoringService.devices.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "poweroutlet.type.a")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.tertiary)
-                        
-                        Text("No devices")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
-                } else {
-                    // Show loading indicator if service is loading
-                    if monitoringService.isLoading {
-                        HStack {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Loading devices...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
-                    }
-                    
-                    List(monitoringService.devices) { device in
-                        MacOSSidebarDeviceRow(
-                            device: device,
-                            status: monitoringService.statusData[device.id],
-                            isLoading: monitoringService.isLoading
-                        )
-                    }
-                }
-                
-                Spacer()
-                
-                // Status footer
-                VStack(spacing: 8) {
-                    if monitoringService.isMonitoring {
-                        HStack {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .symbolEffect(.variableColor.iterative)
-                                .foregroundStyle(.green)
-                            Text("Monitoring Active")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    
-                    if let lastRefresh = monitoringService.lastRefreshTime {
-                        HStack {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                            Text("Updated \(lastRefresh, style: .relative)")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
+        ZStack {
+            // Liquid glass animated background
+            LiquidGlassBackground()
+            
+            NavigationSplitView {
+                // Liquid Glass Sidebar
+                liquidGlassSidebar
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 350)
+            } detail: {
+                // Liquid Glass Detail View
+                liquidGlassDetailView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 350)
-        } detail: {
-            // Main detail view
-            Group {
-                if monitoringService.devices.isEmpty {
-                    MacOSEmptyStateView {
-                        showingSettings = true
-                    }
-                } else {
-                    MacOSDeviceDetailView(
-                        devices: monitoringService.devices,
-                        statusData: monitoringService.statusData
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.background)
         }
-        .navigationTitle("UPS Monitoring")
+        .navigationTitle("")
         .sheet(isPresented: $showingSettings) {
             MacOSSettingsView(monitoringService: monitoringService)
         }
@@ -151,84 +43,456 @@ struct ContentView: View {
                     monitoringService.startMonitoring()
                 }
             }
-            // Don't call triggerImmediateRefresh() here - let startMonitoring handle it
-        }
-        .onDisappear {
-            // Don't stop monitoring when ContentView disappears since the app continues running in menu bar
-            // monitoringService.stopMonitoring()
         }
         .frame(minWidth: 900, minHeight: 650)
     }
+    
+    private var liquidGlassSidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Glass Header
+            LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "sidebar-header") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("UPS Monitoring")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.primary, Color.blue.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        
+                        Text("Real-time device status")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 8) {
+                        Button {
+                            showingSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.blue, Color.cyan],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Settings")
+                        .keyboardShortcut(",", modifiers: .command)
+                        
+                        Button {
+                            isRefreshing = true
+                            Task {
+                                await monitoringService.refreshAllDevices()
+                                isRefreshing = false
+                            }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.green, Color.mint],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                                .animation(.linear(duration: 1).repeatWhile(isRefreshing), value: isRefreshing)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isRefreshing || monitoringService.isLoading)
+                        .help("Refresh all devices")
+                        .keyboardShortcut("r", modifiers: .command)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            
+            Spacer(minLength: 16)
+            
+            if monitoringService.devices.isEmpty {
+                // Empty state with glass card
+                LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "empty-state") {
+                    VStack(spacing: 16) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    RadialGradient(
+                                        colors: [
+                                            Color.blue.opacity(0.2),
+                                            Color.blue.opacity(0.05)
+                                        ],
+                                        center: .center,
+                                        startRadius: 10,
+                                        endRadius: 40
+                                    )
+                                )
+                                .frame(width: 60, height: 60)
+                            
+                            Image(systemName: "poweroutlet.type.a")
+                                .font(.system(size: 24, weight: .semibold))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.blue, Color.cyan],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        }
+                        
+                        VStack(spacing: 4) {
+                            Text("No Devices")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            
+                            Text("Add UPS devices to start monitoring")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            } else {
+                // Show loading indicator if service is loading
+                if monitoringService.isLoading {
+                    LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "loading") {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                                .controlSize(.small)
+                            
+                            Text("Loading devices...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                }
+                
+                // Glass Device List
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(monitoringService.devices) { device in
+                            LiquidGlassSidebarDeviceRow(
+                                device: device,
+                                status: monitoringService.statusData[device.id],
+                                isLoading: monitoringService.isLoading,
+                                hoveredCard: $hoveredCard
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+            
+            Spacer()
+            
+            // Glass Status Footer
+            LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "status-footer") {
+                VStack(spacing: 8) {
+                    if monitoringService.isMonitoring {
+                        HStack(spacing: 8) {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .symbolEffect(.variableColor.iterative)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.green, Color.mint],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                            
+                            Text("Monitoring Active")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    if let lastRefresh = monitoringService.lastRefreshTime {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            
+                            Text("Updated \(lastRefresh, style: .relative)")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
+        .background(Color.clear)
+    }
+    
+    private var liquidGlassDetailView: some View {
+        Group {
+            if monitoringService.devices.isEmpty {
+                LiquidGlassEmptyStateView {
+                    showingSettings = true
+                }
+            } else {
+                LiquidGlassDeviceDetailView(
+                    devices: monitoringService.devices,
+                    statusData: monitoringService.statusData,
+                    hoveredCard: $hoveredCard
+                )
+            }
+        }
+    }
 }
 
-struct MacOSSidebarDeviceRow: View {
+struct LiquidGlassSidebarDeviceRow: View {
     let device: UPSDevice
     let status: UPSStatus?
     let isLoading: Bool
+    @Binding var hoveredCard: String?
+    @State private var isHovered = false
+    
+    private var cardId: String { "device-row-\(device.id)" }
     
     var body: some View {
         HStack(spacing: 12) {
-            // Status indicator
-            if isLoading {
-                ProgressView()
-                    .controlSize(.mini)
-                    .frame(width: 8, height: 8)
-            } else {
+            // Animated status indicator
+            ZStack {
                 Circle()
-                    .fill(status?.isOnline == true ? .green : .red)
-                    .frame(width: 8, height: 8)
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 20, height: 20)
+                    .overlay(
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.3),
+                                        (status?.isOnline == true ? Color.green : Color.red).opacity(0.2)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+                
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .scaleEffect(0.6)
+                } else {
+                    Circle()
+                        .fill(status?.isOnline == true ? Color.green : Color.red)
+                        .frame(width: 8, height: 8)
+                        .shadow(
+                            color: (status?.isOnline == true ? Color.green : Color.red).opacity(0.6),
+                            radius: 4
+                        )
+                        .scaleEffect(isHovered ? 1.2 : 1.0)
+                }
             }
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.name)
-                    .font(.body)
-                    .fontWeight(.medium)
+                    .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
+                    .foregroundColor(.primary)
                 
-                Text("\(device.connectionType.rawValue) • \(device.host)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(device.connectionType.rawValue)
+                        .font(.system(size: 10, weight: .medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.blue.opacity(0.3), lineWidth: 0.5)
+                                )
+                        )
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.blue, Color.cyan],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .textCase(.uppercase)
+                    
+                    Text(device.host)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             
             Spacer(minLength: 0)
             
             if isLoading {
                 Text("Loading...")
-                    .font(.caption)
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             } else if let batteryCharge = status?.batteryCharge {
-                Text("\(Int(batteryCharge))%")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(Int(batteryCharge))%")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundStyle(
+                            batteryCharge > 50 ? .green :
+                            batteryCharge > 20 ? .orange : .red
+                        )
+                    
+                    // Mini battery indicator
+                    GlassProgressBar(
+                        value: batteryCharge,
+                        total: 100,
+                        color: batteryCharge > 50 ? .green :
+                               batteryCharge > 20 ? .orange : .red
+                    )
+                    .frame(width: 30, height: 3)
+                }
             }
         }
-        .padding(.vertical, 4)
-    }
-}
-
-struct MacOSEmptyStateView: View {
-    let onAddDevice: () -> Void
-    
-    var body: some View {
-        ContentUnavailableView {
-            Label("No UPS Devices", systemImage: "poweroutlet.type.a")
-        } description: {
-            Text("Add UPS devices to monitor their status, battery levels, and power metrics in real time.")
-        } actions: {
-            Button("Add UPS Device", action: onAddDevice)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .keyboardShortcut("n", modifiers: .command)
+        .padding(12)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.ultraThinMaterial)
+                    .opacity(isHovered ? 0.8 : 0.5)
+                
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(isHovered ? 0.15 : 0.08),
+                                Color.white.opacity(0.02)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.2),
+                                (status?.isOnline == true ? Color.green : Color.red).opacity(0.1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.8
+                    )
+            }
+        )
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .shadow(
+            color: Color.black.opacity(isHovered ? 0.1 : 0.05),
+            radius: isHovered ? 8 : 4,
+            x: 0,
+            y: isHovered ? 4 : 2
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .onHover { hovered in
+            isHovered = hovered
+            hoveredCard = hovered ? cardId : nil
         }
     }
 }
 
-struct MacOSDeviceDetailView: View {
+struct LiquidGlassEmptyStateView: View {
+    let onAddDevice: () -> Void
+    @State private var hoveredCard: String? = nil
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            
+            LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "empty-main") {
+                VStack(spacing: 24) {
+                    // Animated icon
+                    ZStack {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.blue.opacity(0.3),
+                                        Color.blue.opacity(0.1),
+                                        Color.clear
+                                    ],
+                                    center: .center,
+                                    startRadius: 20,
+                                    endRadius: 60
+                                )
+                            )
+                            .frame(width: 120, height: 120)
+                        
+                        Image(systemName: "poweroutlet.type.a")
+                            .font(.system(size: 48, weight: .light))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.blue, Color.cyan, Color.mint],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .symbolEffect(.bounce.down, value: hoveredCard)
+                    }
+                    
+                    VStack(spacing: 12) {
+                        Text("No UPS Devices")
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.primary, Color.blue.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        
+                        Text("Add UPS devices to monitor their status, battery levels, and power metrics in real time.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .padding(.horizontal, 20)
+                    }
+                    
+                    LiquidGlassButton(
+                        "Add UPS Device",
+                        icon: "plus.circle.fill",
+                        style: .primary
+                    ) {
+                        onAddDevice()
+                    }
+                    .keyboardShortcut("n", modifiers: .command)
+                }
+            }
+            .frame(maxWidth: 400)
+            
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.clear)
+    }
+}
+
+struct LiquidGlassDeviceDetailView: View {
     let devices: [UPSDevice]
     let statusData: [UUID: UPSStatus]
+    @Binding var hoveredCard: String?
     
     var body: some View {
         ScrollView {
@@ -237,178 +501,254 @@ struct MacOSDeviceDetailView: View {
                 GridItem(.flexible(), spacing: 20)
             ], spacing: 24) {
                 ForEach(devices) { device in
-                    MacOSDeviceCard(
+                    LiquidGlassDeviceCard(
                         device: device,
-                        status: statusData[device.id]
+                        status: statusData[device.id],
+                        hoveredCard: $hoveredCard
                     )
                 }
             }
             .padding(24)
         }
-        .background(.background)
+        .background(Color.clear)
     }
 }
 
-struct MacOSDeviceCard: View {
+struct LiquidGlassDeviceCard: View {
     let device: UPSDevice
     let status: UPSStatus?
+    @Binding var hoveredCard: String?
+    
+    private var cardId: String { "device-card-\(device.id)" }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(device.name)
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    HStack(spacing: 8) {
-                        Text(device.connectionType.rawValue)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(.tint.opacity(0.15), in: Capsule())
-                            .foregroundStyle(.tint)
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: cardId) {
+            VStack(spacing: 0) {
+                // Header with glass effect
+                HStack {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(device.name)
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.primary, Color.blue.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
                         
-                        Text(device.host)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-                
-                Spacer()
-                
-                MacOSStatusBadge(isOnline: status?.isOnline ?? false)
-            }
-            .padding(20)
-            
-            Divider()
-            
-            // Content
-            if let status = status, status.isOnline {
-                VStack(spacing: 20) {
-                    // UPS Info section
-                    VStack(spacing: 8) {
-                        if let manufacturer = status.manufacturer {
-                            if let model = status.model {
-                                VStack(spacing: 4) {
-                                    Text("\(manufacturer) \(model)")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.primary)
-                                    
-                                    if let upsName = status.upsName, upsName != model && !upsName.isEmpty {
-                                        Text(upsName)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            } else {
-                                Text(manufacturer)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.primary)
-                                
-                                if let upsName = status.upsName, !upsName.isEmpty {
-                                    Text(upsName)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        } else if let model = status.model {
-                            VStack(spacing: 4) {
-                                Text(model)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.primary)
-                                
-                                if let upsName = status.upsName, upsName != model && !upsName.isEmpty {
-                                    Text(upsName)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        } else if let upsName = status.upsName, !upsName.isEmpty {
-                            Text(upsName)
-                                .font(.subheadline)
-                                .fontWeight(.medium)
+                        HStack(spacing: 8) {
+                            Text(device.connectionType.rawValue)
+                                .font(.system(size: 10, weight: .bold))
+                                .textCase(.uppercase)
+                                .tracking(0.5)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(.ultraThinMaterial)
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(
+                                                    LinearGradient(
+                                                        colors: [Color.blue, Color.cyan],
+                                                        startPoint: .leading,
+                                                        endPoint: .trailing
+                                                    ),
+                                                    lineWidth: 1
+                                                )
+                                        )
+                                )
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.blue, Color.cyan],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                            
+                            Text(device.host)
+                                .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }
                     }
                     
-                    // Battery section
-                    if let batteryCharge = status.batteryCharge, batteryCharge > 0 {
-                        MacOSBatteryView(
-                            charge: batteryCharge,
-                            runtime: status.batteryRuntime,
-                            status: status
-                        )
-                    }
+                    Spacer()
                     
-                    // Status alerts (if any issues)
-                    statusAlertsView(for: status, device: device)
-                    
-                    // Metrics grid
-                    let metrics = buildMetrics(from: status)
-                    if !metrics.isEmpty {
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 12) {
-                            ForEach(metrics, id: \.title) { metric in
-                                MacOSMetricCard(metric: metric)
+                    GlassStatusBadge(
+                        status?.isOnline == true ? "Online" : "Offline",
+                        status: status?.isOnline == true ? .online : .offline
+                    )
+                }
+                .padding(.bottom, 16)
+                
+                // Content with glass sections
+                if let status = status, status.isOnline {
+                    VStack(spacing: 16) {
+                        // UPS Info section with glass background
+                        if hasUPSInfo(status) {
+                            VStack(spacing: 8) {
+                                upsInfoSection(for: status)
+                            }
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(.ultraThinMaterial)
+                                    .opacity(0.4)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                                    )
+                            )
+                        }
+                        
+                        // Battery section with enhanced glass effect
+                        if let batteryCharge = status.batteryCharge, batteryCharge > 0 {
+                            LiquidGlassBatteryView(
+                                charge: batteryCharge,
+                                runtime: status.batteryRuntime,
+                                status: status,
+                                hoveredCard: $hoveredCard,
+                                deviceId: device.id
+                            )
+                        }
+                        
+                        // Status alerts
+                        statusAlertsView(for: status, device: device)
+                        
+                        // Metrics grid with glass cards
+                        let metrics = buildMetrics(from: status)
+                        if !metrics.isEmpty {
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: 12) {
+                                ForEach(metrics, id: \.title) { metric in
+                                    LiquidGlassMetricCard(
+                                        title: metric.title,
+                                        value: metric.value,
+                                        icon: metric.icon,
+                                        color: metric.color
+                                    )
+                                }
                             }
                         }
-                    }
-                    
-                    // Statistics summary
-                    statisticsSummary(for: status, device: device)
-                    
-                    // Last updated
-                    HStack {
-                        Text("Last updated")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
                         
-                        Spacer()
+                        // Statistics summary with glass styling
+                        statisticsSummary(for: status, device: device)
                         
-                        Text(status.lastUpdate, style: .relative)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
+                        // Last updated with subtle glass effect
+                        HStack {
+                            Text("Last updated")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.tertiary)
+                                .textCase(.uppercase)
+                                .tracking(0.5)
+                            
+                            Spacer()
+                            
+                            Text(status.lastUpdate, style: .relative)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 8)
                     }
+                } else {
+                    // Offline state with glass effect
+                    VStack(spacing: 16) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    RadialGradient(
+                                        colors: [
+                                            Color.orange.opacity(0.3),
+                                            Color.orange.opacity(0.1),
+                                            Color.clear
+                                        ],
+                                        center: .center,
+                                        startRadius: 10,
+                                        endRadius: 40
+                                    )
+                                )
+                                .frame(width: 60, height: 60)
+                            
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.title)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.orange, Color.red],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .symbolEffect(.bounce, value: status?.isOnline)
+                        }
+                        
+                        VStack(spacing: 6) {
+                            Text(status?.status ?? "Offline")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                            
+                            Text("Check device connection and network settings")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(20)
-            } else {
-                // Offline state
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.title)
-                        .foregroundStyle(.orange)
-                        .symbolEffect(.bounce, value: status?.isOnline)
-                    
-                    VStack(spacing: 6) {
-                        Text(status?.status ?? "Offline")
-                            .font(.headline)
-                            .fontWeight(.medium)
-                        
-                        Text("Check device connection and network settings")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-                .padding(.vertical, 40)
-                .frame(maxWidth: .infinity)
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.separator.opacity(0.5), lineWidth: 0.5)
-        )
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func hasUPSInfo(_ status: UPSStatus) -> Bool {
+        return status.manufacturer != nil || status.model != nil || status.upsName != nil
+    }
+    
+    private func upsInfoSection(for status: UPSStatus) -> some View {
+        VStack(spacing: 4) {
+            if let manufacturer = status.manufacturer {
+                if let model = status.model {
+                    Text("\(manufacturer) \(model)")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    
+                    if let upsName = status.upsName, upsName != model && !upsName.isEmpty {
+                        Text(upsName)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(manufacturer)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    
+                    if let upsName = status.upsName, !upsName.isEmpty {
+                        Text(upsName)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else if let model = status.model {
+                Text(model)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary)
+                
+                if let upsName = status.upsName, upsName != model && !upsName.isEmpty {
+                    Text(upsName)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            } else if let upsName = status.upsName, !upsName.isEmpty {
+                Text(upsName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
     
     private func buildMetrics(from status: UPSStatus) -> [MacOSMetric] {
@@ -427,7 +767,6 @@ struct MacOSDeviceCard: View {
         // Battery Runtime
         if let formattedRuntime = status.formattedRuntime {
             let color: Color = {
-                // If showing unlimited (∞), use blue color
                 if formattedRuntime == "∞" {
                     return .blue
                 }
@@ -458,7 +797,7 @@ struct MacOSDeviceCard: View {
         
         // Input voltage
         if let inputVoltage = status.inputVoltage, inputVoltage > 0 {
-            let isNormal = inputVoltage >= 110 && inputVoltage <= 130 // Broader range for different regions
+            let isNormal = inputVoltage >= 110 && inputVoltage <= 130
             let displayVoltage = inputVoltage < 10 ? String(format: "%.1fV", inputVoltage) : "\(Int(inputVoltage))V"
             metrics.append(MacOSMetric(
                 title: "Input",
@@ -518,68 +857,67 @@ struct MacOSDeviceCard: View {
     }
 }
 
-struct MacOSStatusBadge: View {
-    let isOnline: Bool
-    
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(isOnline ? .green : .red)
-                .frame(width: 6, height: 6)
-            
-            Text(isOnline ? "Online" : "Offline")
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundStyle(isOnline ? .green : .red)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-            Capsule()
-                .stroke(.separator.opacity(0.3), lineWidth: 0.5)
-        )
-    }
-}
+//         let statusText: String
+//         let status: LiquidGlassStatusBadge.Status
+//         
+//         enum Status: String, CaseIterable, Identifiable {
+//             case online = "Online"
+//             case offline = "Offline"
+//             case warning = "Warning"
+//             case error = "Error"
+//             
+//             var id: String { self.rawValue }
+//             
+//             var color: Color {
+//                 switch self {
+//                 case .online:
+//                     return .green
+//                 case .offline:
+//                     return .red
+//                 case .warning:
+//                     return .orange
+//                 case .error:
+//                     return .red
+//                 }
+//             }
+//         }
+//         
+//         var body: some View {
+//             HStack(spacing: 6) {
+//                 Circle()
+//                     .fill(status.color)
+//                     .frame(width: 6, height: 6)
+//                 
+//                 Text(statusText)
+//                     .font(.caption)
+//                     .fontWeight(.medium)
+//                     .foregroundColor(status.color)
+//             }
+//             .padding(.horizontal, 10)
+//             .padding(.vertical, 4)
+//             .background(.ultraThinMaterial, in: Capsule())
+//             .overlay(
+//                 Capsule()
+//                     .stroke(.separator.opacity(0.3), lineWidth: 0.5)
+//             )
+//         }
+//     }
 
-struct MacOSBatteryView: View {
+struct LiquidGlassBatteryView: View {
     let charge: Double
     let runtime: Int?
     let status: UPSStatus?
+    @Binding var hoveredCard: String?
+    let deviceId: UUID
+    @State private var animatedCharge: Double = 0
+    @State private var isHovered = false
+    
+    private var cardId: String { "battery-\(deviceId)" }
     
     private var batteryColor: Color {
         if charge > 50 { return .green }
         else if charge > 20 { return .orange }
         else { return .red }
-    }
-    
-    private var batteryGradient: LinearGradient {
-        switch charge {
-        case 80...100:
-            return LinearGradient(
-                colors: [Color.green.opacity(0.8), Color.green],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        case 50...79:
-            return LinearGradient(
-                colors: [Color.green.opacity(0.6), Color.green],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        case 20...49:
-            return LinearGradient(
-                colors: [Color.orange.opacity(0.8), Color.orange],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        default:
-            return LinearGradient(
-                colors: [Color.red.opacity(0.8), Color.red],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        }
     }
     
     private var chargingStatusInfo: (text: String, icon: String, color: Color)? {
@@ -616,182 +954,185 @@ struct MacOSBatteryView: View {
     var body: some View {
         VStack(spacing: 16) {
             HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "battery.100")
-                        .font(.title3)
-                        .foregroundStyle(batteryColor)
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        batteryColor.opacity(0.3),
+                                        batteryColor.opacity(0.1)
+                                    ],
+                                    center: .center,
+                                    startRadius: 5,
+                                    endRadius: 20
+                                )
+                            )
+                            .frame(width: 32, height: 32)
+                        
+                        Image(systemName: "battery.100")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [batteryColor, batteryColor.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
                     
                     Text("Battery")
-                        .font(.headline)
-                        .fontWeight(.medium)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.primary)
                 }
                 
                 Spacer()
                 
-                Text("\(Int(charge))%")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(batteryColor)
+                Text("\(Int(animatedCharge))%")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [batteryColor, batteryColor.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                     .monospacedDigit()
             }
             
-            // Custom Progress Bar
-            ZStack(alignment: .leading) {
-                // Background track
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.quaternary.opacity(0.3))
-                    .frame(height: 12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(.separator.opacity(0.2), lineWidth: 0.5)
-                    )
-                
-                // Progress fill with gradient
-                GeometryReader { geometry in
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(batteryGradient)
-                        .frame(width: max(8, geometry.size.width * (charge / 100)), height: 12)
-                        .animation(.easeInOut(duration: 0.5), value: charge)
-                        .overlay(
-                            // Subtle highlight for 3D effect
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.white.opacity(0.3),
-                                            Color.white.opacity(0.1),
-                                            Color.clear
-                                        ],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                                .frame(width: max(8, geometry.size.width * (charge / 100)), height: 12)
-                        )
-                    
-                    // Charging animation overlay
-                    if let chargingInfo = chargingStatusInfo, chargingInfo.text == "Charging" {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.0),
-                                        Color.white.opacity(0.4),
-                                        Color.white.opacity(0.0)
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: 30, height: 12)
-                            .offset(x: -15)
-                            .animation(
-                                .linear(duration: 1.5)
-                                    .repeatForever(autoreverses: false),
-                                value: chargingInfo.text == "Charging"
-                            )
-                            .mask(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .frame(width: max(8, geometry.size.width * (charge / 100)), height: 12)
-                            )
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 12)
+            // Enhanced Glass Progress Bar
+            GlassProgressBar(value: animatedCharge, total: 100, color: batteryColor)
+                .frame(height: 16)
             
-            // Battery status info
+            // Battery status info with glass styling
             HStack(spacing: 16) {
-                // Charging status with enhanced styling
                 if let chargingInfo = chargingStatusInfo {
                     HStack(spacing: 6) {
                         Image(systemName: chargingInfo.icon)
-                            .font(.caption)
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(chargingInfo.color)
                             .symbolEffect(.pulse, isActive: chargingInfo.text == "Charging")
                         
                         Text(chargingInfo.text)
-                            .font(.caption)
-                            .fontWeight(.semibold)
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(chargingInfo.color)
+                            .textCase(.uppercase)
+                            .tracking(0.3)
                     }
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(chargingInfo.color.opacity(0.1), in: Capsule())
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Capsule()
+                                    .stroke(chargingInfo.color.opacity(0.3), lineWidth: 0.8)
+                            )
+                    )
                 }
                 
                 Spacer()
                 
-                // Runtime with enhanced styling
                 if let status = status, let formattedRuntime = status.formattedRuntime {
                     HStack(spacing: 6) {
                         Image(systemName: formattedRuntime == "∞" ? "infinity" : "clock")
-                            .font(.caption)
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                         
                         Text(formattedRuntime)
-                            .font(.caption)
-                            .fontWeight(.semibold)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.secondary)
-                            .monospacedDigit()
                     }
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(.secondary.opacity(0.1), in: Capsule())
-                } else if let runtime = runtime, runtime > 0 {
-                    HStack(spacing: 6) {
-                        Image(systemName: "clock")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        
-                        Text("\(runtime) min")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(.secondary.opacity(0.1), in: Capsule())
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 0.8)
+                            )
+                    )
                 }
             }
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(.separator.opacity(0.3), lineWidth: 0.5)
-                )
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .opacity(isHovered ? 0.8 : 0.6)
+                
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                batteryColor.opacity(isHovered ? 0.1 : 0.05),
+                                batteryColor.opacity(0.02)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.3),
+                                batteryColor.opacity(0.2)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
         )
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .shadow(
+            color: batteryColor.opacity(isHovered ? 0.2 : 0.1),
+            radius: isHovered ? 12 : 8,
+            x: 0,
+            y: isHovered ? 6 : 4
+        )
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isHovered)
+        .animation(.easeInOut(duration: 0.8), value: animatedCharge)
+        .onAppear {
+            animatedCharge = charge
+        }
+        .onChange(of: charge) { oldValue, newValue in
+            withAnimation(.easeInOut(duration: 0.6)) {
+                animatedCharge = newValue
+            }
+        }
+        .onHover { hovered in
+            isHovered = hovered
+            hoveredCard = hovered ? cardId : nil
+        }
     }
 }
 
-struct MacOSMetric {
+struct LiquidGlassMetricCard: View {
     let title: String
     let value: String
     let icon: String
     let color: Color
-}
-
-struct MacOSMetricCard: View {
-    let metric: MacOSMetric
     
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: metric.icon)
+            Image(systemName: icon)
                 .font(.title3)
-                .foregroundStyle(metric.color)
+                .foregroundStyle(color)
                 .frame(width: 24)
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(metric.value)
+                Text(value)
                     .font(.title3)
                     .fontWeight(.semibold)
                     .monospacedDigit()
                 
-                Text(metric.title)
+                Text(title)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -810,69 +1151,30 @@ struct MacOSMetricCard: View {
 private func statusAlertsView(for status: UPSStatus, device: UPSDevice) -> some View {
     VStack(spacing: 8) {
         if let alarmsPresent = status.alarmsPresent, alarmsPresent > 0 {
-            HStack {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                Text("\(alarmsPresent) active alarm\(alarmsPresent == 1 ? "" : "s")")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.red)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            GlassStatusBadge(
+                "\(alarmsPresent) active alarm\(alarmsPresent == 1 ? "" : "s")",
+                status: .error
+            )
         }
         
         if let outputSource = status.outputSource, outputSource == "Battery" {
-            HStack {
-                Image(systemName: "battery.25")
-                    .foregroundStyle(.orange)
-                Text("Running on battery power")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.orange)
-                
-                if let seconds = status.secondsOnBattery {
-                    Text("(\(seconds)s)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            GlassStatusBadge(
+                "Running on battery power",
+                status: .warning
+            )
         }
         
         // Battery age warning using device data
         if let batteryAge = device.batteryAgeInDays, batteryAge > 1095 { // 3+ years
-            HStack {
-                Image(systemName: "battery.0")
-                    .foregroundStyle(.red)
-                Text("Battery is \(batteryAge / 365) years old - consider replacement")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.red)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            GlassStatusBadge(
+                "Battery is \(batteryAge / 365) years old - consider replacement",
+                status: .error
+            )
         } else if let batteryAge = device.batteryAgeInDays, batteryAge > 730 { // 2+ years
-            HStack {
-                Image(systemName: "calendar.badge.exclamationmark")
-                    .foregroundStyle(.orange)
-                Text("Battery is \(batteryAge / 365) years old - monitor closely")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.orange)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            GlassStatusBadge(
+                "Battery is \(batteryAge / 365) years old - monitor closely",
+                status: .warning
+            )
         }
     }
 }
@@ -882,15 +1184,16 @@ private func statisticsSummary(for status: UPSStatus, device: UPSDevice) -> some
         if let powerFailures = status.powerFailures, powerFailures > 0 {
             HStack {
                 Text("Power failures detected")
-                    .font(.caption)
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.3)
                 
                 Spacer()
                 
                 Text("\(powerFailures)")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .monospacedDigit()
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(.primary)
             }
         }
         
@@ -898,8 +1201,10 @@ private func statisticsSummary(for status: UPSStatus, device: UPSDevice) -> some
         if let batteryAgeInDays = device.batteryAgeInDays {
             HStack {
                 Text("Battery age")
-                    .font(.caption)
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.3)
                 
                 Spacer()
                 
@@ -914,19 +1219,39 @@ private func statisticsSummary(for status: UPSStatus, device: UPSDevice) -> some
             if let replaceDate = recommendedReplaceDate {
                 HStack {
                     Text("Recommended replacement")
-                        .font(.caption)
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.3)
                     
                     Spacer()
                     
                     Text(replaceDate, style: .date)
-                        .font(.caption)
-                        .fontWeight(.medium)
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.orange)
                 }
             }
         }
     }
+    .padding(12)
+    .background(
+        RoundedRectangle(cornerRadius: 8)
+            .fill(.ultraThinMaterial)
+            .opacity(0.3)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+            )
+    )
+}
+
+// MARK: - Supporting Types
+
+struct MacOSMetric {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
 }
 
 struct BatteryAgeText: View {
@@ -947,10 +1272,8 @@ struct BatteryAgeText: View {
     
     var body: some View {
         Text(ageInfo.text)
-            .font(.caption)
-            .fontWeight(.medium)
+            .font(.system(size: 11, weight: .bold, design: .monospaced))
             .foregroundStyle(ageInfo.color)
-            .monospacedDigit()
     }
 }
 
