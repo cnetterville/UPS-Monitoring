@@ -44,6 +44,9 @@ struct ContentView: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .showSettings)) { _ in
+            showingSettings = true
+        }
         .frame(minWidth: 900, minHeight: 650)
     }
     
@@ -344,24 +347,40 @@ struct LiquidGlassSidebarDeviceRow: View {
                 Text("Loading...")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-            } else if let batteryCharge = status?.batteryCharge {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(Int(batteryCharge))%")
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .foregroundStyle(
-                            batteryCharge > 50 ? .green :
-                            batteryCharge > 20 ? .orange : .red
+            } else if let status = status, status.isOnline {
+                // Only show battery percentage if it's meaningful (not 100% or 0%)
+                if let batteryCharge = status.batteryCharge, batteryCharge > 0 && batteryCharge < 100 {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(Int(batteryCharge))%")
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .foregroundStyle(
+                                batteryCharge > 50 ? .green :
+                                batteryCharge > 20 ? .orange : .red
+                            )
+                        
+                        // Mini battery indicator
+                        GlassProgressBar(
+                            value: batteryCharge,
+                            total: 100,
+                            color: batteryCharge > 50 ? .green :
+                                   batteryCharge > 20 ? .orange : .red
                         )
-                    
-                    // Mini battery indicator
-                    GlassProgressBar(
-                        value: batteryCharge,
-                        total: 100,
-                        color: batteryCharge > 50 ? .green :
-                               batteryCharge > 20 ? .orange : .red
-                    )
-                    .frame(width: 30, height: 3)
+                        .frame(width: 30, height: 3)
+                    }
+                } else {
+                    // Show "Online" for devices at 100% or without meaningful battery data
+                    Text("Online")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.green)
+                        .textCase(.uppercase)
+                        .tracking(0.3)
                 }
+            } else {
+                Text("Offline")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.red)
+                    .textCase(.uppercase)
+                    .tracking(0.3)
             }
         }
         .padding(12)

@@ -12,6 +12,7 @@ struct MenuBarPopoverView: View {
     @ObservedObject var monitoringService: UPSMonitoringService
     @State private var hoveredCard: String? = nil
     let onShowApp: () -> Void
+    let onShowSettings: () -> Void
     let onQuit: () -> Void
     
     var body: some View {
@@ -236,7 +237,7 @@ struct MenuBarPopoverView: View {
                     icon: "gearshape",
                     style: .secondary
                 ) {
-                    onShowApp() // Will show app and then user can access settings
+                    onShowSettings()
                 }
                 
                 LiquidGlassButton(
@@ -385,7 +386,7 @@ struct MenuBarDeviceRow: View {
             // Device info
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.name)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .foregroundColor(.primary)
                 
@@ -397,9 +398,10 @@ struct MenuBarDeviceRow: View {
             
             Spacer(minLength: 0)
             
-            // Battery level or status
+            // Battery level or status - only show if battery info is available and meaningful
             if let status = status, status.isOnline {
-                if let batteryCharge = status.batteryCharge {
+                if let batteryCharge = status.batteryCharge, batteryCharge > 0 && batteryCharge < 100 {
+                    // Only show battery percentage if it's not 100%
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("\(Int(batteryCharge))%")
                             .font(.system(size: 12, weight: .bold, design: .monospaced))
@@ -418,6 +420,7 @@ struct MenuBarDeviceRow: View {
                         .frame(width: 24, height: 2)
                     }
                 } else {
+                    // Just show online status for devices at 100% or without battery info
                     Text("Online")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.green)
@@ -433,14 +436,14 @@ struct MenuBarDeviceRow: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(.ultraThinMaterial)
                 .opacity(isHovered ? 0.6 : 0.3)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
                 )
         )
         .scaleEffect(isHovered ? 1.01 : 1.0)
@@ -462,6 +465,7 @@ struct MenuBarPopoverView_Previews: PreviewProvider {
         MenuBarPopoverView(
             monitoringService: mockService,
             onShowApp: { print("Show app") },
+            onShowSettings: { print("Show settings") },
             onQuit: { print("Quit") }
         )
         .preferredColorScheme(.dark)

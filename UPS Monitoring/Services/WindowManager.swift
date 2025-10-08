@@ -31,6 +31,16 @@ class WindowManager: ObservableObject {
         }
     }
     
+    func showSettings() {
+        // Show the main window first
+        showMainWindow()
+        
+        // Post notification to show settings
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NotificationCenter.default.post(name: .showSettings, object: nil)
+        }
+    }
+    
     private func isMainWindow(_ window: NSWindow) -> Bool {
         // Filter out system windows that can't become key
         guard window.contentView != nil else { return false }
@@ -116,4 +126,10 @@ class WindowManager: ObservableObject {
             }
         }
     }
+}
+
+// MARK: - Notification Names
+
+extension Notification.Name {
+    static let showSettings = Notification.Name("ShowSettings")
 }

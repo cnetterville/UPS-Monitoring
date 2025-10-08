@@ -142,6 +142,10 @@ class MenuBarManager: ObservableObject {
                 self?.popover?.performClose(nil)
                 self?.showApp()
             },
+            onShowSettings: { [weak self] in
+                self?.popover?.performClose(nil)
+                self?.showSettings()
+            },
             onQuit: { [weak self] in
                 self?.popover?.performClose(nil)
                 self?.quitApp()
@@ -361,6 +365,10 @@ class MenuBarManager: ObservableObject {
     
     @objc private func quitApp() {
         NSApp.terminate(nil)
+    }
+    
+    @objc private func showSettings() {
+        WindowManager.shared.showSettings()
     }
     
     enum OverallStatus {
