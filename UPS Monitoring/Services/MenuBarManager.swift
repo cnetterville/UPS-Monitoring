@@ -12,6 +12,7 @@ import ServiceManagement
 
 class MenuBarManager: ObservableObject {
     private var statusBarItem: NSStatusItem?
+    private var popover: NSPopover?
     private weak var monitoringService: UPSMonitoringService?
     private var cancellables = Set<AnyCancellable>()
     
@@ -30,6 +31,7 @@ class MenuBarManager: ObservableObject {
         self.launchAtLogin = UserDefaults.standard.object(forKey: "LaunchAtLogin") as? Bool ?? false
         
         setupMenuBar()
+        setupPopover()
         // Always run as accessory app (no dock icon)
         NSApp.setActivationPolicy(.accessory)
         
@@ -43,7 +45,6 @@ class MenuBarManager: ObservableObject {
         self.monitoringService = service
         observeUPSStatus()
         updateMenuBarIcon()
-        updateMenu()
         
         // Reset notification data when monitoring service changes
         NotificationService.shared.resetNotificationData()
@@ -88,56 +89,69 @@ class MenuBarManager: ObservableObject {
         }
     }
     
+    private func setupPopover() {
+        popover = NSPopover()
+        popover?.contentSize = NSSize(width: 320, height: 450)
+        popover?.behavior = .transient
+        popover?.animates = true
+        popover?.appearance = NSAppearance(named: .vibrantDark)
+    }
+    
     private func setupMenuBar() {
         statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let statusBarButton = statusBarItem?.button {
-            statusBarButton.image = NSImage(systemSymbolName: "poweroutlet.type.a", accessibilityDescription: "UPS Status")
+            statusBarButton.image = NSImage(systemSymbolName: "battery.100", accessibilityDescription: "UPS Status")
             statusBarButton.image?.isTemplate = true
             
-            // Create the menu
-            let menu = NSMenu()
-            
-            // Status item
-            let statusMenuItem = NSMenuItem(title: "Loading...", action: nil, keyEquivalent: "")
-            statusMenuItem.isEnabled = false
-            menu.addItem(statusMenuItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            // Show app item
-            let showAppItem = NSMenuItem(title: "Show UPS Monitoring", action: #selector(showApp), keyEquivalent: "")
-            showAppItem.target = self
-            menu.addItem(showAppItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            // Preferences submenu
-            let preferencesSubmenu = NSMenu()
-            
-            // Launch at login toggle  
-            let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
-            loginItem.target = self
-            preferencesSubmenu.addItem(loginItem)
-            
-            // Notifications toggle
-            let notificationsItem = NSMenuItem(title: "Enable Notifications", action: #selector(toggleNotifications), keyEquivalent: "")
-            notificationsItem.target = self
-            preferencesSubmenu.addItem(notificationsItem)
-            
-            let preferencesMenuItem = NSMenuItem(title: "Preferences", action: nil, keyEquivalent: "")
-            preferencesMenuItem.submenu = preferencesSubmenu
-            menu.addItem(preferencesMenuItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            // Quit item
-            let quitItem = NSMenuItem(title: "Quit UPS Monitoring", action: #selector(quitApp), keyEquivalent: "q")
-            quitItem.target = self
-            menu.addItem(quitItem)
-            
-            statusBarItem?.menu = menu
+            // Set up left click action only
+            statusBarButton.action = #selector(statusBarButtonClicked)
+            statusBarButton.target = self
         }
+    }
+    
+    @objc private func statusBarButtonClicked() {
+        // Left click only - show/hide popover
+        togglePopover()
+    }
+    
+    private func togglePopover() {
+        guard let statusBarButton = statusBarItem?.button else { return }
+        
+        if popover?.isShown == true {
+            popover?.performClose(nil)
+        } else {
+            // Update popover content
+            updatePopoverContent()
+            popover?.show(relativeTo: statusBarButton.bounds, of: statusBarButton, preferredEdge: .minY)
+            
+            // Make sure the popover window is properly focused
+            if let popoverWindow = popover?.contentViewController?.view.window {
+                NSApp.activate(ignoringOtherApps: true)
+                popoverWindow.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+    
+    private func updatePopoverContent() {
+        guard let monitoringService = monitoringService else { return }
+        
+        let popoverView = MenuBarPopoverView(
+            monitoringService: monitoringService,
+            onShowApp: { [weak self] in
+                self?.popover?.performClose(nil)
+                self?.showApp()
+            },
+            onQuit: { [weak self] in
+                self?.popover?.performClose(nil)
+                self?.quitApp()
+            }
+        )
+        
+        let hostingController = NSHostingController(rootView: popoverView)
+        hostingController.view.frame = NSRect(origin: .zero, size: NSSize(width: 320, height: 450))
+        
+        popover?.contentViewController = hostingController
     }
     
     private func observeUPSStatus() {
@@ -151,7 +165,6 @@ class MenuBarManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateMenuBarIcon()
-                self?.updateMenu()
             }
             .store(in: &cancellables)
         
@@ -160,7 +173,6 @@ class MenuBarManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateMenuBarIcon()
-                self?.updateMenu()
             }
             .store(in: &cancellables)
         
@@ -169,7 +181,6 @@ class MenuBarManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateMenuBarIcon()
-                self?.updateMenu()
             }
             .store(in: &cancellables)
     }
@@ -196,7 +207,7 @@ class MenuBarManager: ObservableObject {
         }
         
         // Create the battery icon
-        guard let batteryImage = NSImage(systemSymbolName: iconName, accessibilityDescription: "UPS Status") else { return }
+        guard let batteryImage = NSImage(systemSymbolName: iconName, accessibilityDescription: "Battery Status") else { return }
         
         // Configure the battery icon size
         let iconSize = NSSize(width: 18, height: 12)
@@ -252,76 +263,38 @@ class MenuBarManager: ObservableObject {
         statusBarButton.image?.isTemplate = false
         
         // Update tooltip with status information
-        statusBarButton.toolTip = getStatusTooltipWithStatus(overallStatus)
+        statusBarButton.toolTip = "UPS Monitoring - \(getOverallStatusText())"
     }
     
-    private func updateMenu() {
-        guard let menu = statusBarItem?.menu,
-              let monitoringService = monitoringService else { return }
+    private func getOverallStatusText() -> String {
+        guard let monitoringService = monitoringService else { return "Loading..." }
         
-        // Update status item (first item)
-        if let statusItem = menu.items.first {
-            statusItem.title = getOverallStatusText()
-        }
+        let onlineCount = monitoringService.devices.filter { device in
+            guard let status = monitoringService.statusData[device.id] else { return false }
+            return device.isEnabled && status.isOnline
+        }.count
         
-        // Update preferences submenu items
-        if let preferencesMenuItem = menu.items.first(where: { $0.title == "Preferences" }),
-           let preferencesSubmenu = preferencesMenuItem.submenu {
-            
-            // Update launch at login toggle
-            if let loginItem = preferencesSubmenu.items.first(where: { $0.title == "Launch at Login" }) {
-                loginItem.state = launchAtLogin ? .on : .off
-            }
-            
-            // Update notifications toggle
-            if let notificationsItem = preferencesSubmenu.items.first(where: { $0.title == "Enable Notifications" }) {
-                notificationsItem.state = NotificationService.shared.notificationsEnabled ? .on : .off
-            }
-        }
+        let totalEnabledCount = monitoringService.devices.filter { $0.isEnabled }.count
         
-        // Clear existing device items (keep the fixed items)
-        let fixedItemsCount = 5 // Status, separator, Show App, separator, Preferences, separator
-        while menu.items.count > fixedItemsCount + 1 { // +1 for quit item
-            menu.removeItem(at: fixedItemsCount)
-        }
-        
-        // Add device items
-        if !monitoringService.devices.isEmpty {
-            for device in monitoringService.devices where device.isEnabled {
-                let deviceStatus = monitoringService.statusData[device.id]
-                let menuItem = createDeviceMenuItem(device: device, status: deviceStatus)
-                menu.insertItem(menuItem, at: menu.items.count - 1) // Insert before quit item
+        if totalEnabledCount == 0 {
+            return "No devices configured"
+        } else if onlineCount == 0 {
+            return "All devices offline"
+        } else if onlineCount == totalEnabledCount {
+            let overallStatus = getOverallStatus()
+            switch overallStatus {
+            case .good:
+                return "All systems normal"
+            case .warning:
+                return "Warning - Check devices"
+            case .critical:
+                return "Critical - Immediate attention needed"
+            case .offline:
+                return "All devices offline"
             }
         } else {
-            let noDevicesItem = NSMenuItem(title: "No devices configured", action: nil, keyEquivalent: "")
-            noDevicesItem.isEnabled = false
-            menu.insertItem(noDevicesItem, at: menu.items.count - 1)
+            return "\(onlineCount)/\(totalEnabledCount) devices online"
         }
-    }
-    
-    private func createDeviceMenuItem(device: UPSDevice, status: UPSStatus?) -> NSMenuItem {
-        let isOnline = status?.isOnline ?? false
-        let batteryLevel = status?.batteryCharge.map { Int($0) }
-        
-        var title = device.name
-        
-        if isOnline {
-            if let batteryLevel = batteryLevel {
-                title += " - \(batteryLevel)%"
-                
-                // Add status indicators
-                if let outputSource = status?.outputSource, outputSource == "Battery" {
-                    title += " (On Battery)"
-                }
-            }
-        } else {
-            title += " - Offline"
-        }
-        
-        let menuItem = NSMenuItem(title: title, action: #selector(showApp), keyEquivalent: "")
-        menuItem.target = self
-        
-        return menuItem
     }
     
     private func getOverallStatus() -> OverallStatus {
@@ -371,78 +344,6 @@ class MenuBarManager: ObservableObject {
             return .warning
         } else {
             return .good
-        }
-    }
-    
-    private func getOverallStatusText() -> String {
-        guard let monitoringService = monitoringService else { return "Loading..." }
-        
-        let onlineCount = monitoringService.devices.filter { device in
-            guard let status = monitoringService.statusData[device.id] else { return false }
-            return device.isEnabled && status.isOnline
-        }.count
-        
-        let totalEnabledCount = monitoringService.devices.filter { $0.isEnabled }.count
-        
-        if totalEnabledCount == 0 {
-            return "No devices configured"
-        } else if onlineCount == 0 {
-            return "All devices offline"
-        } else if onlineCount == totalEnabledCount {
-            let overallStatus = getOverallStatus()
-            switch overallStatus {
-            case .good:
-                return "All systems normal"
-            case .warning:
-                return "Warning - Check devices"
-            case .critical:
-                return "Critical - Immediate attention needed"
-            case .offline:
-                return "All devices offline"
-            }
-        } else {
-            return "\(onlineCount)/\(totalEnabledCount) devices online"
-        }
-    }
-    
-    private func getStatusTooltipWithStatus(_ status: OverallStatus) -> String {
-        guard let monitoringService = monitoringService else { return "UPS Monitoring" }
-        
-        let statusText = getOverallStatusText()
-        let statusIndicator = switch status {
-        case .good: "🟢"
-        case .warning: "🟠" 
-        case .critical: "🔴"
-        case .offline: "⚪"
-        }
-        
-        var details: [String] = []
-        
-        for device in monitoringService.devices where device.isEnabled {
-            guard let deviceStatus = monitoringService.statusData[device.id] else { continue }
-            
-            var deviceInfo = device.name
-            
-            if deviceStatus.isOnline {
-                if let charge = deviceStatus.batteryCharge {
-                    deviceInfo += " - \(Int(charge))%"
-                }
-                if let outputSource = deviceStatus.outputSource, outputSource == "Battery" {
-                    deviceInfo += " (On Battery)"
-                }
-            } else {
-                deviceInfo += " - Offline"
-            }
-            
-            details.append(deviceInfo)
-        }
-        
-        let fullStatus = "\(statusIndicator) \(statusText)"
-        
-        if details.isEmpty {
-            return fullStatus
-        } else {
-            return fullStatus + "\n" + details.joined(separator: "\n")
         }
     }
     
