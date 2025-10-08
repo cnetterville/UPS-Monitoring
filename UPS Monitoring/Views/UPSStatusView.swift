@@ -73,51 +73,51 @@ struct UPSStatusView: View {
                                     GridItem(.flexible())
                                 ], spacing: 12) {
                                     if let runtime = status.batteryRuntime {
-                                        GlassMetricCard(
+                                        LiquidGlassMetricCard(
                                             title: "Runtime",
                                             value: "\(runtime) min",
                                             icon: "clock.fill",
-                                            color: runtime < 15 ? .red : runtime < 30 ? .orange : .green
+                                            color: runtime < 15 ? Color.red : runtime < 30 ? Color.orange : Color.green
                                         )
                                     }
                                     
                                     if let load = status.load {
-                                        GlassMetricCard(
+                                        LiquidGlassMetricCard(
                                             title: "Load",
                                             value: "\(Int(load))%",
                                             icon: "gauge.high",
-                                            color: load > 80 ? .red : load > 60 ? .orange : .green
+                                            color: load > 80 ? Color.red : load > 60 ? Color.orange : Color.green
                                         )
                                     }
                                     
                                     if let inputVoltage = status.inputVoltage {
                                         let isNormal = inputVoltage >= 110 && inputVoltage <= 130
-                                        GlassMetricCard(
+                                        LiquidGlassMetricCard(
                                             title: "Input V",
                                             value: "\(Int(inputVoltage))V",
                                             icon: "powerplug.fill",
-                                            color: isNormal ? .green : .orange
+                                            color: isNormal ? Color.green : Color.orange
                                         )
                                     }
                                     
                                     if let outputVoltage = status.outputVoltage {
                                         let isNormal = outputVoltage >= 110 && outputVoltage <= 130
-                                        GlassMetricCard(
+                                        LiquidGlassMetricCard(
                                             title: "Output V",
                                             value: "\(Int(outputVoltage))V",
                                             icon: "poweroutlet.type.a.fill",
-                                            color: isNormal ? .green : .orange
+                                            color: isNormal ? Color.green : Color.orange
                                         )
                                     }
                                 }
                                 
                                 // Additional metrics if available
                                 if let temperature = status.temperature, temperature > 0 {
-                                    GlassMetricCard(
+                                    LiquidGlassMetricCard(
                                         title: "Temperature",
                                         value: "\(Int(temperature))°C",
                                         icon: "thermometer.medium",
-                                        color: temperature > 40 ? .red : temperature > 30 ? .orange : .green
+                                        color: temperature > 40 ? Color.red : temperature > 30 ? Color.orange : Color.green
                                     )
                                 }
                                 

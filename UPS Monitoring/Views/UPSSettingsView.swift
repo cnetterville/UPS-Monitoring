@@ -15,6 +15,8 @@ struct MacOSSettingsView: View {
     @State private var showingAddDevice = false
     @State private var selectedTab = "devices"
     @State private var hoveredCard: String? = nil
+    @State private var showingDiscovery = false
+    @StateObject private var discoveryService = DiscoveryService()
     
     var body: some View {
         ZStack {
@@ -87,6 +89,9 @@ struct MacOSSettingsView: View {
         .frame(width: 750, height: 600)
         .sheet(isPresented: $showingAddDevice) {
             MacOSAddDeviceView(monitoringService: monitoringService)
+        }
+        .sheet(isPresented: $showingDiscovery) {
+            DeviceDiscoveryView(discoveryService: discoveryService, monitoringService: monitoringService)
         }
     }
     
@@ -182,7 +187,7 @@ struct MacOSSettingsView: View {
                             
                             Spacer()
                             
-                            Text("\(monitoringService.devices.count) of 2")
+                            Text("\(monitoringService.devices.count) of 4")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(.secondary)
                                 .textCase(.uppercase)
@@ -208,7 +213,7 @@ struct MacOSSettingsView: View {
                                 )
                             }
                             
-                            if monitoringService.devices.count < 2 {
+                            if monitoringService.devices.count < 4 {
                                 HStack {
                                     LiquidGlassButton(
                                         "Add UPS Device",
@@ -217,14 +222,18 @@ struct MacOSSettingsView: View {
                                     ) {
                                         showingAddDevice = true
                                     }
-                                    
+
                                     Spacer()
+                                    Button("Discover on Network") {
+                                        showingDiscovery = true
+                                    }
+                                    .buttonStyle(.borderedProminent)
                                 }
                             }
                         }
                         
-                        if monitoringService.devices.count >= 2 {
-                            Text("Maximum of 2 devices supported in this version.")
+                        if monitoringService.devices.count >= 4 {
+                            Text("Maximum of 4 devices supported.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .padding(.top, 8)
@@ -353,6 +362,14 @@ struct LiquidGlassDeviceSettingsRow: View {
                     style: .secondary
                 ) {
                     showingEditDevice = true
+                }
+                
+                LiquidGlassButton(
+                    "Delete",
+                    icon: "trash",
+                    style: .destructive
+                ) {
+                    monitoringService.removeDevice(device)
                 }
             }
             .fixedSize(horizontal: true, vertical: false)

@@ -179,27 +179,79 @@ class MenuBarManager: ObservableObject {
 
         let overallStatus = getOverallStatus()
 
-        // Update icon based on status - use different icons instead of colors
-        let iconName: String
+        // Use battery icon
+        let iconName = "battery.100"
         
+        // Get the color based on status for the battery
+        let batteryColor: NSColor
         switch overallStatus {
         case .good:
-            iconName = "poweroutlet.type.a.fill"  // Filled = good
+            batteryColor = NSColor.systemGreen
         case .warning:
-            iconName = "poweroutlet.type.a"       // Outline = warning
+            batteryColor = NSColor.systemOrange  
         case .critical:
-            iconName = "exclamationmark.triangle.fill" // Warning symbol = critical
+            batteryColor = NSColor.systemRed
         case .offline:
-            iconName = "poweroutlet.type.a"       // Outline = offline (will appear dimmed)
+            batteryColor = NSColor.systemGray
         }
         
-        // Set the image as template (black/white based on system theme)
-        if let image = NSImage(systemSymbolName: iconName, accessibilityDescription: "UPS Status") {
-            statusBarButton.image = image
-            statusBarButton.image?.isTemplate = true  // Let macOS handle the coloring
-        }
+        // Create the battery icon
+        guard let batteryImage = NSImage(systemSymbolName: iconName, accessibilityDescription: "UPS Status") else { return }
         
-        // Update tooltip with color information since icon can't show it
+        // Configure the battery icon size
+        let iconSize = NSSize(width: 18, height: 12)
+        let batteryIcon = batteryImage.copy() as! NSImage
+        batteryIcon.size = iconSize
+        
+        // Create text attributes for "UPS" - keep it white
+        let textAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 8, weight: .medium),
+            .foregroundColor: NSColor.white
+        ]
+        
+        let upsText = NSAttributedString(string: "UPS", attributes: textAttributes)
+        let textSize = upsText.size()
+        
+        // Calculate total size (icon + spacing + text)
+        let spacing: CGFloat = 1
+        let totalSize = NSSize(
+            width: max(iconSize.width, textSize.width),
+            height: iconSize.height + spacing + textSize.height
+        )
+        
+        // Create the composite image
+        let compositeImage = NSImage(size: totalSize)
+        compositeImage.lockFocus()
+        
+        // Draw the battery icon at the top, centered
+        let batteryRect = NSRect(
+            x: (totalSize.width - iconSize.width) / 2,
+            y: textSize.height + spacing,
+            width: iconSize.width,
+            height: iconSize.height
+        )
+        
+        // Tint the battery icon with status color
+        batteryColor.set()
+        batteryIcon.draw(in: batteryRect)
+        batteryRect.fill(using: .sourceAtop)
+        
+        // Draw the "UPS" text at the bottom, centered (white)
+        let textRect = NSRect(
+            x: (totalSize.width - textSize.width) / 2,
+            y: 0,
+            width: textSize.width,
+            height: textSize.height
+        )
+        
+        upsText.draw(in: textRect)
+        
+        compositeImage.unlockFocus()
+        
+        statusBarButton.image = compositeImage
+        statusBarButton.image?.isTemplate = false
+        
+        // Update tooltip with status information
         statusBarButton.toolTip = getStatusTooltipWithStatus(overallStatus)
     }
     
