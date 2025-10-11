@@ -606,6 +606,8 @@ class UPSMonitoringService: ObservableObject {
                                 status.manufacturer = "APC"
                             } else if value.lowercased().contains("tripp") {
                                 status.manufacturer = "Tripp Lite"
+                            } else if value.lowercased().contains("ubiquiti") {
+                                status.manufacturer = "Ubiquiti"
                             }
                         }
                     }
