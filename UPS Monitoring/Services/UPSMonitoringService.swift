@@ -362,6 +362,14 @@ class UPSMonitoringService: ObservableObject {
             "GET VAR \(upsName) device.model", 
             "GET VAR \(upsName) ups.id",
             "GET VAR \(upsName) ups.status",
+            "GET VAR \(upsName) ups.mfr",          // Alternative manufacturer field
+            "GET VAR \(upsName) ups.model",        // Alternative model field
+            "GET VAR \(upsName) ups.productid",    // Product ID field
+            "GET VAR \(upsName) ups.vendorid",     // Vendor ID field
+            "GET VAR \(upsName) ups.serial",       // Serial number
+            "GET VAR \(upsName) device.serial",    // Alternative serial number
+            "GET VAR \(upsName) ups.type",         // Device type
+            "GET VAR \(upsName) device.type",      // Device type
             "GET VAR \(upsName) battery.charge",
             "GET VAR \(upsName) battery.runtime",
             "GET VAR \(upsName) battery.voltage",
@@ -392,10 +400,16 @@ class UPSMonitoringService: ObservableObject {
                 // Basic parsing
                 if let manufacturer = finalResponses["device.mfr"] {
                     status.manufacturer = manufacturer
+                } else if let manufacturer = finalResponses["ups.mfr"] {
+                    status.manufacturer = manufacturer
                 }
+                
                 if let model = finalResponses["device.model"] {
                     status.model = model
+                } else if let model = finalResponses["ups.model"] {
+                    status.model = model
                 }
+                
                 if let chargeStr = finalResponses["battery.charge"], let charge = Double(chargeStr) {
                     status.batteryCharge = charge
                 }
@@ -457,8 +471,19 @@ class UPSMonitoringService: ObservableObject {
                     status.load = load
                 }
                 
+                if let upsId = finalResponses["ups.id"] {
+                    if status.upsName == nil {
+                        status.upsName = upsId
+                    }
+                }
+                
                 if let serialNumber = finalResponses["ups.serial"] {
-                    // Store serial number in upsName field for display
+                    // Store serial number - but don't override ups.id if it exists
+                    if status.upsName == nil {
+                        status.upsName = serialNumber
+                    }
+                } else if let serialNumber = finalResponses["device.serial"] {
+                    // Try device.serial as fallback
                     if status.upsName == nil {
                         status.upsName = serialNumber
                     }
