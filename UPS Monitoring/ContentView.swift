@@ -638,17 +638,27 @@ struct LiquidGlassDeviceCard: View {
                         // Metrics grid with glass cards
                         let metrics = buildMetrics(from: status)
                         if !metrics.isEmpty {
-                            LazyVGrid(columns: [
-                                GridItem(.flexible()),
-                                GridItem(.flexible())
-                            ], spacing: 12) {
-                                ForEach(metrics, id: \.title) { metric in
-                                    LiquidGlassMetricCard(
-                                        title: metric.title,
-                                        value: metric.value,
-                                        icon: metric.icon,
-                                        color: metric.color
-                                    )
+                            // Use a more flexible layout that doesn't create empty spaces
+                            VStack(spacing: 12) {
+                                ForEach(0..<((metrics.count + 1) / 2), id: \.self) { row in
+                                    HStack(spacing: 12) {
+                                        let startIndex = row * 2
+                                        let endIndex = min(startIndex + 2, metrics.count)
+                                        
+                                        ForEach(startIndex..<endIndex, id: \.self) { index in
+                                            LiquidGlassMetricCard(
+                                                title: metrics[index].title,
+                                                value: metrics[index].value,
+                                                icon: metrics[index].icon,
+                                                color: metrics[index].color
+                                            )
+                                        }
+                                        
+                                        // Only add spacer if we have an odd number and this is the last row
+                                        if endIndex - startIndex == 1 && endIndex == metrics.count {
+                                            Spacer()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -671,6 +681,7 @@ struct LiquidGlassDeviceCard: View {
                                 .foregroundStyle(.secondary)
                         }
                         .padding(.top, 8)
+
                     }
                 } else {
                     // Offline state with glass effect
@@ -1199,69 +1210,77 @@ private func statusAlertsView(for status: UPSStatus, device: UPSDevice) -> some 
 }
 
 private func statisticsSummary(for status: UPSStatus, device: UPSDevice) -> some View {
-    VStack(spacing: 8) {
-        if let powerFailures = status.powerFailures, powerFailures > 0 {
-            HStack {
-                Text("Power failures detected")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.3)
+    let hasContent = (status.powerFailures != nil && status.powerFailures! > 0) ||
+                    (device.batteryAgeInDays != nil) ||
+                    (device.batteryInstallDate != nil)
+    
+    return Group {
+        if hasContent {
+            VStack(spacing: 8) {
+                if let powerFailures = status.powerFailures, powerFailures > 0 {
+                    HStack {
+                        Text("Power failures detected")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .tracking(0.3)
+                        
+                        Spacer()
+                        
+                        Text("\(powerFailures)")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(.primary)
+                    }
+                }
                 
-                Spacer()
+                // Battery age information
+                if let batteryAgeInDays = device.batteryAgeInDays {
+                    HStack {
+                        Text("Battery age")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .tracking(0.3)
+                        
+                        Spacer()
+                        
+                        BatteryAgeText(days: batteryAgeInDays)
+                    }
+                }
                 
-                Text("\(powerFailures)")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.primary)
-            }
-        }
-        
-        // Battery age information
-        if let batteryAgeInDays = device.batteryAgeInDays {
-            HStack {
-                Text("Battery age")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.3)
-                
-                Spacer()
-                
-                BatteryAgeText(days: batteryAgeInDays)
-            }
-        }
-        
-        // Next replacement date (if battery model/notes exist)
-        if let installDate = device.batteryInstallDate {
-            let recommendedReplaceDate = Calendar.current.date(byAdding: .year, value: 3, to: installDate)
-            
-            if let replaceDate = recommendedReplaceDate {
-                HStack {
-                    Text("Recommended replacement")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .tracking(0.3)
+                // Next replacement date (if battery model/notes exist)
+                if let installDate = device.batteryInstallDate {
+                    let recommendedReplaceDate = Calendar.current.date(byAdding: .year, value: 3, to: installDate)
                     
-                    Spacer()
-                    
-                    Text(replaceDate, style: .date)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.orange)
+                    if let replaceDate = recommendedReplaceDate {
+                        HStack {
+                            Text("Recommended replacement")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                                .tracking(0.3)
+                            
+                            Spacer()
+                            
+                            Text(replaceDate, style: .date)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.orange)
+                        }
+                    }
                 }
             }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.3)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                    )
+            )
         }
     }
-    .padding(12)
-    .background(
-        RoundedRectangle(cornerRadius: 8)
-            .fill(.ultraThinMaterial)
-            .opacity(0.3)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
-            )
-    )
 }
 
 // MARK: - Supporting Types

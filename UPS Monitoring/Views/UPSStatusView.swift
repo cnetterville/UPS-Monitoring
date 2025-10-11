@@ -68,46 +68,45 @@ struct UPSStatusView: View {
                                 }
                                 
                                 // Key Metrics Grid with glass cards
-                                LazyVGrid(columns: [
-                                    GridItem(.flexible()),
-                                    GridItem(.flexible())
-                                ], spacing: 12) {
-                                    if let runtime = status.batteryRuntime {
-                                        LiquidGlassMetricCard(
-                                            title: "Runtime",
-                                            value: "\(runtime) min",
-                                            icon: "clock.fill",
-                                            color: runtime < 15 ? Color.red : runtime < 30 ? Color.orange : Color.green
-                                        )
-                                    }
-                                    
-                                    if let load = status.load {
-                                        LiquidGlassMetricCard(
-                                            title: "Load",
-                                            value: "\(Int(load))%",
-                                            icon: "gauge.high",
-                                            color: load > 80 ? Color.red : load > 60 ? Color.orange : Color.green
-                                        )
-                                    }
-                                    
-                                    if let inputVoltage = status.inputVoltage {
+                                let metrics = [
+                                    status.batteryRuntime.map { runtime in
+                                        (title: "Runtime", value: "\(runtime) min", icon: "clock.fill", color: runtime < 15 ? Color.red : runtime < 30 ? Color.orange : Color.green)
+                                    },
+                                    status.load.map { load in
+                                        (title: "Load", value: "\(Int(load))%", icon: "gauge.high", color: load > 80 ? Color.red : load > 60 ? Color.orange : Color.green)
+                                    },
+                                    status.inputVoltage.map { inputVoltage in
                                         let isNormal = inputVoltage >= 110 && inputVoltage <= 130
-                                        LiquidGlassMetricCard(
-                                            title: "Input V",
-                                            value: "\(Int(inputVoltage))V",
-                                            icon: "powerplug.fill",
-                                            color: isNormal ? Color.green : Color.orange
-                                        )
-                                    }
-                                    
-                                    if let outputVoltage = status.outputVoltage {
+                                        return (title: "Input V", value: "\(Int(inputVoltage))V", icon: "powerplug.fill", color: isNormal ? Color.green : Color.orange)
+                                    },
+                                    status.outputVoltage.map { outputVoltage in
                                         let isNormal = outputVoltage >= 110 && outputVoltage <= 130
-                                        LiquidGlassMetricCard(
-                                            title: "Output V",
-                                            value: "\(Int(outputVoltage))V",
-                                            icon: "poweroutlet.type.a.fill",
-                                            color: isNormal ? Color.green : Color.orange
-                                        )
+                                        return (title: "Output V", value: "\(Int(outputVoltage))V", icon: "poweroutlet.type.a.fill", color: isNormal ? Color.green : Color.orange)
+                                    }
+                                ].compactMap { $0 }
+                                
+                                if !metrics.isEmpty {
+                                    VStack(spacing: 12) {
+                                        ForEach(0..<((metrics.count + 1) / 2), id: \.self) { row in
+                                            HStack(spacing: 12) {
+                                                let startIndex = row * 2
+                                                let endIndex = min(startIndex + 2, metrics.count)
+                                                
+                                                ForEach(startIndex..<endIndex, id: \.self) { index in
+                                                    LiquidGlassMetricCard(
+                                                        title: metrics[index].title,
+                                                        value: metrics[index].value,
+                                                        icon: metrics[index].icon,
+                                                        color: metrics[index].color
+                                                    )
+                                                }
+                                                
+                                                // Only add spacer if we have an odd number and this is the last row
+                                                if endIndex - startIndex == 1 && endIndex == metrics.count {
+                                                    Spacer()
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 
