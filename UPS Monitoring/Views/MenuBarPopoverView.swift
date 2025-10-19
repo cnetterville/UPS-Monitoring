@@ -398,34 +398,45 @@ struct MenuBarDeviceRow: View {
             
             Spacer(minLength: 0)
             
-            // Battery level or status - only show if battery info is available and meaningful
+            // Load and Runtime info (instead of just status)
             if let status = status, status.isOnline {
-                if let batteryCharge = status.batteryCharge, batteryCharge > 0 && batteryCharge < 100 {
-                    // Only show battery percentage if it's not 100%
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(Int(batteryCharge))%")
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundStyle(
-                                batteryCharge > 50 ? .green :
-                                batteryCharge > 20 ? .orange : .red
-                            )
+                VStack(alignment: .trailing, spacing: 2) {
+                    HStack(spacing: 4) {
+                        // Load percentage
+                        if let load = status.load {
+                            Text("\(Int(load))%")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(
+                                    load > 80 ? .red :
+                                    load > 60 ? .orange : .green
+                                )
+                        } else {
+                            Text("--")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
                         
-                        // Mini battery bar
-                        GlassProgressBar(
-                            value: batteryCharge,
-                            total: 100,
-                            color: batteryCharge > 50 ? .green :
-                                   batteryCharge > 20 ? .orange : .red
-                        )
-                        .frame(width: 24, height: 2)
+                        Text("load")
+                            .font(.system(size: 8, weight: .light))
+                            .foregroundStyle(.secondary)
                     }
-                } else {
-                    // Just show online status for devices at 100% or without battery info
-                    Text("Online")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.green)
-                        .textCase(.uppercase)
-                        .tracking(0.3)
+                    
+                    HStack(spacing: 4) {
+                        // Runtime
+                        if let runtime = status.formattedRuntime {
+                            Text(runtime)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.primary)
+                        } else {
+                            Text("--")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        Text("runtime")
+                            .font(.system(size: 8, weight: .light))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             } else {
                 Text("Offline")

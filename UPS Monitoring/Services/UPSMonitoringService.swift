@@ -493,10 +493,23 @@ class UPSMonitoringService: ObservableObject {
                 if let upsStatus = finalResponses["ups.status"] {
                     let flags = upsStatus.uppercased().components(separatedBy: " ")
                     
+                    // Check for Ubiquiti manufacturer to handle their NUT server bug
+                    let isUbiquiti = status.manufacturer?.lowercased().contains("ubiquiti") == true ||
+                                   finalResponses["device.mfr"]?.lowercased().contains("ubiquiti") == true ||
+                                   finalResponses["ups.mfr"]?.lowercased().contains("ubiquiti") == true
+                    
                     // Check for charging indicators in status
                     if flags.contains("CHRG") || flags.contains("CHARGING") {
-                        status.isCharging = true
-                        status.batteryStatus = .batteryCharging
+                        // Special handling for Ubiquiti UPS bug: they report CHRG even when fully charged
+                        if isUbiquiti, let charge = status.batteryCharge, charge >= 95 {
+                            // Battery is full, ignore the false CHRG flag
+                            status.isCharging = false
+                            status.batteryStatus = .batteryNormal
+                        } else {
+                            // Normal charging logic for non-Ubiquiti or actually charging
+                            status.isCharging = true
+                            status.batteryStatus = .batteryCharging
+                        }
                     }
                     
                     if flags.contains("OB") {
@@ -505,7 +518,12 @@ class UPSMonitoringService: ObservableObject {
                         status.isCharging = false // Can't be charging while on battery
                         status.batteryStatus = flags.contains("LB") ? .batteryLow : .batteryDischarging
                     } else if flags.contains("OL") {
-                        status.status = "Online"
+                        // Special status message for Ubiquiti when battery is full
+                        if isUbiquiti && flags.contains("CHRG") && status.batteryCharge ?? 0 >= 95 {
+                            status.status = "Online (Battery Full)"
+                        } else {
+                            status.status = "Online"
+                        }
                         status.outputSource = "Normal"
                         
                         // If online and not explicitly discharging, likely charging or maintaining
@@ -811,7 +829,7 @@ class UPSMonitoringService: ObservableObject {
                 
                 // Try alternative output voltage OID
                 if status.outputVoltage == nil || (status.outputVoltage ?? 0) < 50 {
-                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.1.2.2.33.1.4.4.1.2.0") { value in
+                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.6.1.2.2.33.1.4.4.1.2.0") { value in
                         if value > 0 {
                             status.outputVoltage = self.parseVoltage(value, expectedRange: 100...300)
                         }
