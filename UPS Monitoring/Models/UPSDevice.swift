@@ -83,6 +83,13 @@ struct UPSStatus: Identifiable {
     var secondsOnBattery: Int? // Time on battery power
     var alarmsPresent: Int? // Number of active alarms
     
+    // Energy tracking properties
+    var cumulativeEnergyWh: Double? // Total energy consumed in Watt-hours since last reset
+    var averagePowerW: Double? // Average power over sampling period
+    var peakPowerW: Double? // Peak power since last reset
+    var energyTrackingStartDate: Date? // When energy tracking started
+    var lastPowerSample: PowerSample? // Last power reading for calculations
+    
     // Computed property for formatted runtime
     var formattedRuntime: String? {
         guard let runtime = batteryRuntime else { 
@@ -136,6 +143,35 @@ struct UPSStatus: Identifiable {
         self.isOnline = false
         self.status = "Unknown"
         self.lastUpdate = Date()
+    }
+}
+
+struct PowerSample: Codable {
+    let timestamp: Date
+    let powerWatts: Double
+    let voltageV: Double?
+    let currentA: Double?
+    let loadPercent: Double?
+}
+
+// Energy calculation extensions
+extension UPSStatus {
+    // Calculate energy consumed since last sample
+    func energyConsumedSince(_ lastSample: PowerSample, currentPower: Double) -> Double {
+        let timeDifferenceHours = Date().timeIntervalSince(lastSample.timestamp) / 3600.0
+        let averagePower = (lastSample.powerWatts + currentPower) / 2.0
+        return averagePower * timeDifferenceHours // Watt-hours
+    }
+    
+    // Format energy for display
+    var formattedCumulativeEnergy: String? {
+        guard let energy = cumulativeEnergyWh else { return nil }
+        
+        if energy < 1000 {
+            return String(format: "%.1f Wh", energy)
+        } else {
+            return String(format: "%.2f kWh", energy / 1000.0)
+        }
     }
 }
 

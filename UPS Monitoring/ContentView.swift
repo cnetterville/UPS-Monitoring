@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var isRefreshing = false
     @State private var hoveredCard: String? = nil
+    @State private var showingNUTDebug = false
+    @State private var selectedDeviceForDebug: UPSDevice?
     
     var body: some View {
         ZStack {
@@ -887,51 +889,36 @@ struct LiquidGlassDeviceCard: View {
     }
 }
 
-//         let statusText: String
-//         let status: LiquidGlassStatusBadge.Status
-//         
-//         enum Status: String, CaseIterable, Identifiable {
-//             case online = "Online"
-//             case offline = "Offline"
-//             case warning = "Warning"
-//             case error = "Error"
-//             
-//             var id: String { self.rawValue }
-//             
-//             var color: Color {
-//                 switch self {
-//                 case .online:
-//                     return .green
-//                 case .offline:
-//                     return .red
-//                 case .warning:
-//                     return .orange
-//                 case .error:
-//                     return .red
-//                 }
-//             }
-//         }
-//         
-//         var body: some View {
-//             HStack(spacing: 6) {
-//                 Circle()
-//                     .fill(status.color)
-//                     .frame(width: 6, height: 6)
-//                 
-//                 Text(statusText)
-//                     .font(.caption)
-//                     .fontWeight(.medium)
-//                     .foregroundColor(status.color)
-//             }
-//             .padding(.horizontal, 10)
-//             .padding(.vertical, 4)
-//             .background(.ultraThinMaterial, in: Capsule())
-//             .overlay(
-//                 Capsule()
-//                     .stroke(.separator.opacity(0.3), lineWidth: 0.5)
-//             )
-//         }
-//     }
+extension Animation {
+    func repeatWhile<T: Equatable>(_ condition: T) -> Animation {
+        return condition as? Bool == true ? self.repeatForever() : self
+    }
+}
+
+// In your device detail view or main status view, add:
+// EnergyStatsView(
+//     device: device,
+//     status: status,
+//     monitoringService: monitoringService
+// )
+// 
+// // Add this somewhere in your device detail view or settings
+// 
+// Button("Debug NUT Variables") {
+//     // Present NUTDebugView
+// }
+// .sheet(isPresented: $showingNUTDebug) {
+//     NUTDebugView(device: selectedDevice)
+// }
+
+// MARK: - Supporting Types
+
+struct MacOSMetric {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+}
 
 struct LiquidGlassBatteryView: View {
     let charge: Double
@@ -1283,15 +1270,6 @@ private func statisticsSummary(for status: UPSStatus, device: UPSDevice) -> some
     }
 }
 
-// MARK: - Supporting Types
-
-struct MacOSMetric {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-}
-
 struct BatteryAgeText: View {
     let days: Int
     
@@ -1312,11 +1290,5 @@ struct BatteryAgeText: View {
         Text(ageInfo.text)
             .font(.system(size: 11, weight: .bold, design: .monospaced))
             .foregroundStyle(ageInfo.color)
-    }
-}
-
-extension Animation {
-    func repeatWhile<T: Equatable>(_ condition: T) -> Animation {
-        return condition as? Bool == true ? self.repeatForever() : self
     }
 }

@@ -27,7 +27,7 @@ class UPSMonitoringService: ObservableObject {
         static let upsIdentName = "1.3.6.1.2.1.33.1.1.5.0"
         static let upsIdentModel = "1.3.6.1.2.1.33.1.1.3.0"
         static let upsIdentManufacturer = "1.3.6.1.2.1.33.1.1.1.0"
-        static let upsStatus = "1.3.6.1.2.1.33.1.4.1.0" // Fixed: was duplicate of manufacturer
+        static let upsStatus = "1.3.6.1.2.1.33.1.4.1.0"
         
         // Battery Info (CyberPower typically reports these accurately)
         static let batteryStatus = "1.3.6.1.3.1.33.1.2.1.0"
@@ -50,7 +50,7 @@ class UPSMonitoringService: ObservableObject {
         // Output Info
         static let outputSource = "1.3.6.1.2.1.33.1.4.1.0"
         static let outputVoltage = "1.3.6.1.2.1.33.1.4.4.1.2.1"
-        static let outputFrequency = "1.3.6.1.2.1.33.1.4.2.0" // Fixed: was duplicate of voltage
+        static let outputFrequency = "1.3.6.1.2.1.33.1.4.2.0"
         static let outputLoad = "1.3.6.1.2.1.33.1.4.4.1.5.1"
         static let outputPower = "1.3.6.1.2.1.33.1.4.4.1.4.1"
         
@@ -299,7 +299,7 @@ class UPSMonitoringService: ObservableObject {
                 if !foundUPS && !availableUPS.isEmpty {
                     // Try using the first available UPS
                     if let firstUPS = availableUPS.first {
-                        Task { @MainActor in
+                        Task {
                             await self.getNUTVariables(connection: connection, device: device, upsName: firstUPS) { result in
                                 Task {
                                     await completionManager.completeOnce(result, completion: completion)
@@ -312,7 +312,7 @@ class UPSMonitoringService: ObservableObject {
                 
                 if foundUPS || availableUPS.isEmpty {
                     // Use the specified UPS name or continue anyway if no UPS list returned
-                    Task { @MainActor in
+                    Task {
                         await self.getNUTVariables(connection: connection, device: device, upsName: upsName) { result in
                             Task {
                                 await completionManager.completeOnce(result, completion: completion)
@@ -355,7 +355,7 @@ class UPSMonitoringService: ObservableObject {
         
         let completionManager = CompletionManager()
         
-        // Comprehensive list of NUT variables for CyberPower UPS devices
+        // Enhanced list of NUT variables including power
         let commands = [
             "LIST VAR \(upsName)",
             "GET VAR \(upsName) device.mfr",
@@ -376,9 +376,22 @@ class UPSMonitoringService: ObservableObject {
             "GET VAR \(upsName) battery.current", // For charging detection
             "GET VAR \(upsName) battery.charge.restart",
             "GET VAR \(upsName) input.voltage",
+            "GET VAR \(upsName) input.frequency",
             "GET VAR \(upsName) output.voltage",
             "GET VAR \(upsName) output.voltage.nominal", // Nominal vs actual
-            "GET VAR \(upsName) ups.load"
+            "GET VAR \(upsName) output.frequency",
+            "GET VAR \(upsName) output.current",
+            "GET VAR \(upsName) ups.load",
+            "GET VAR \(upsName) ups.power",           // Real power output in watts
+            "GET VAR \(upsName) ups.power.nominal",   // Nominal apparent power rating (VA)
+            "GET VAR \(upsName) ups.realpower.nominal", // Nominal real power rating (Watts)
+            "GET VAR \(upsName) ups.realpower",       // Alternative real power field
+            "GET VAR \(upsName) output.power",        // Output power
+            "GET VAR \(upsName) output.realpower",    // Output real power
+            "GET VAR \(upsName) output.power.percent", // Power as percentage of nominal
+            "GET VAR \(upsName) ups.efficiency",      // UPS efficiency percentage
+            "GET VAR \(upsName) input.power",         // Input power (if available)
+            "GET VAR \(upsName) ups.powerfactor"      // Power factor
         ]
         
         let commandIndexLock = NSLock()
@@ -469,6 +482,43 @@ class UPSMonitoringService: ObservableObject {
                 
                 if let loadStr = finalResponses["ups.load"], let load = Double(loadStr) {
                     status.load = load
+                }
+                
+                // Parse power information - NUT power support (prioritize real power in Watts)
+                if let powerStr = finalResponses["ups.power"], let power = Double(powerStr) {
+                    status.outputPower = power
+                } else if let realPowerStr = finalResponses["ups.realpower"], let realPower = Double(realPowerStr) {
+                    status.outputPower = realPower
+                } else if let outputPowerStr = finalResponses["output.power"], let outputPower = Double(outputPowerStr) {
+                    status.outputPower = outputPower
+                } else if let outputRealPowerStr = finalResponses["output.realpower"], let outputRealPower = Double(outputRealPowerStr) {
+                    status.outputPower = outputRealPower
+                } else if let inputPowerStr = finalResponses["input.power"], let inputPower = Double(inputPowerStr) {
+                    // Use input power as approximation if output power not available
+                    status.outputPower = inputPower
+                } else if let nominalRealPowerStr = finalResponses["ups.realpower.nominal"], 
+                          let loadStr = finalResponses["ups.load"],
+                          let nominalRealPower = Double(nominalRealPowerStr),
+                          let load = Double(loadStr) {
+                    // Calculate real power from nominal real power (Watts) and load percentage
+                    status.outputPower = nominalRealPower * (load / 100.0)
+                } else if let nominalPowerStr = finalResponses["ups.power.nominal"], 
+                          let loadStr = finalResponses["ups.load"],
+                          let nominalPower = Double(nominalPowerStr),
+                          let load = Double(loadStr) {
+                    // Fallback: Calculate from apparent power (VA) - less accurate
+                    // This assumes power factor of 1.0, which is not always correct
+                    status.outputPower = nominalPower * (load / 100.0)
+                }
+                
+                // Parse output frequency
+                if let outputFreqStr = finalResponses["output.frequency"], let outputFreq = Double(outputFreqStr) {
+                    status.outputFrequency = outputFreq
+                }
+                
+                // Parse input frequency
+                if let inputFreqStr = finalResponses["input.frequency"], let inputFreq = Double(inputFreqStr) {
+                    status.inputFrequency = inputFreq
                 }
                 
                 if let upsId = finalResponses["ups.id"] {
@@ -813,7 +863,7 @@ class UPSMonitoringService: ObservableObject {
                 
                 // Try alternative input voltage OID for CyberPower
                 if status.inputVoltage == nil || (status.inputVoltage ?? 0) < 50 {
-                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.1.2.2.33.1.3.3.1.3.0") { value in
+                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.1.2.1.33.1.3.3.1.3.0") { value in
                         if value > 0 {
                             status.inputVoltage = self.parseVoltage(value, expectedRange: 100...300)
                         }
@@ -829,14 +879,12 @@ class UPSMonitoringService: ObservableObject {
                 
                 // Try alternative output voltage OID
                 if status.outputVoltage == nil || (status.outputVoltage ?? 0) < 50 {
-                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.6.1.2.2.33.1.4.4.1.2.0") { value in
+                    await getSNMPIntValue(snmpSender, device.host, community, "1.3.6.1.2.1.33.1.4.4.1.2.0") { value in
                         if value > 0 {
                             status.outputVoltage = self.parseVoltage(value, expectedRange: 100...300)
                         }
                     }
                 }
-                
-                // Get input frequency - REMOVED
                 
                 // Get output frequency
                 await getSNMPIntValue(snmpSender, device.host, community, UPSOIDs.outputFrequency) { value in
@@ -927,7 +975,6 @@ class UPSMonitoringService: ObservableObject {
         // If no scaling factor works, return the value divided by 10 (most common case)
         return value / 10.0
     }
-    
     
     private func parseUPSStatus(_ statusValue: Int) -> String {
         switch statusValue {
