@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var monitoringService = UPSMonitoringService()
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showingSettings = false
     @State private var isRefreshing = false
     @State private var hoveredCard: String? = nil
@@ -63,7 +64,10 @@ struct ContentView: View {
                             .fontWeight(.bold)
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [Color.primary, Color.blue.opacity(0.8)],
+                                    colors: [
+                                        colorScheme == .dark ? Color.white : Color.black,
+                                        Color.blue.opacity(0.8)
+                                    ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -156,7 +160,7 @@ struct ContentView: View {
                         }
                         
                         VStack(spacing: 4) {
-                            Text("No Devices")
+                            Text("No UPS Devices")
                                 .font(.headline)
                                 .fontWeight(.semibold)
                             
@@ -254,6 +258,7 @@ struct ContentView: View {
                 LiquidGlassDeviceDetailView(
                     devices: monitoringService.devices,
                     statusData: monitoringService.statusData,
+                    monitoringService: monitoringService,
                     hoveredCard: $hoveredCard
                 )
             }
@@ -435,6 +440,7 @@ struct LiquidGlassSidebarDeviceRow: View {
 
 struct LiquidGlassEmptyStateView: View {
     let onAddDevice: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredCard: String? = nil
     
     var body: some View {
@@ -477,7 +483,10 @@ struct LiquidGlassEmptyStateView: View {
                             .font(.system(size: 28, weight: .bold, design: .rounded))
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [Color.primary, Color.blue.opacity(0.8)],
+                                    colors: [
+                                        colorScheme == .dark ? Color.white : Color.black,
+                                        Color.blue.opacity(0.8)
+                                    ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -513,6 +522,7 @@ struct LiquidGlassEmptyStateView: View {
 struct LiquidGlassDeviceDetailView: View {
     let devices: [UPSDevice]
     let statusData: [UUID: UPSStatus]
+    let monitoringService: UPSMonitoringService
     @Binding var hoveredCard: String?
     
     var body: some View {
@@ -525,6 +535,7 @@ struct LiquidGlassDeviceDetailView: View {
                     LiquidGlassDeviceCard(
                         device: device,
                         status: statusData[device.id],
+                        monitoringService: monitoringService,
                         hoveredCard: $hoveredCard
                     )
                 }
@@ -538,7 +549,10 @@ struct LiquidGlassDeviceDetailView: View {
 struct LiquidGlassDeviceCard: View {
     let device: UPSDevice
     let status: UPSStatus?
+    let monitoringService: UPSMonitoringService
     @Binding var hoveredCard: String?
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var showingEnergyStats = false
     
     private var cardId: String { "device-card-\(device.id)" }
     
@@ -552,7 +566,10 @@ struct LiquidGlassDeviceCard: View {
                             .font(.system(size: 20, weight: .bold, design: .rounded))
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [Color.primary, Color.blue.opacity(0.8)],
+                                    colors: [
+                                        colorScheme == .dark ? Color.white : Color.black,
+                                        Color.blue.opacity(0.8)
+                                    ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -596,10 +613,22 @@ struct LiquidGlassDeviceCard: View {
                     
                     Spacer()
                     
-                    GlassStatusBadge(
-                        status?.isOnline == true ? "Online" : "Offline",
-                        status: status?.isOnline == true ? .online : .offline
-                    )
+                    VStack(spacing: 8) {
+                        GlassStatusBadge(
+                            status?.isOnline == true ? "Online" : "Offline",
+                            status: status?.isOnline == true ? .online : .offline
+                        )
+                        
+                        if status?.isOnline == true {
+                            LiquidGlassButton(
+                                "Energy",
+                                icon: "chart.line.uptrend.xyaxis",
+                                style: .secondary
+                            ) {
+                                showingEnergyStats = true
+                            }
+                        }
+                    }
                 }
                 .padding(.bottom, 16)
                 
@@ -732,6 +761,13 @@ struct LiquidGlassDeviceCard: View {
                     .frame(maxWidth: .infinity)
                 }
             }
+        }
+        .sheet(isPresented: $showingEnergyStats) {
+            EnergyStatsView(
+                device: device,
+                status: status,
+                monitoringService: monitoringService
+            )
         }
     }
     
@@ -926,6 +962,7 @@ struct LiquidGlassBatteryView: View {
     let status: UPSStatus?
     @Binding var hoveredCard: String?
     let deviceId: UUID
+    @Environment(\.colorScheme) private var colorScheme
     @State private var animatedCharge: Double = 0
     @State private var isHovered = false
     
@@ -1000,7 +1037,7 @@ struct LiquidGlassBatteryView: View {
                     
                     Text("Battery")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
                 }
                 
                 Spacer()

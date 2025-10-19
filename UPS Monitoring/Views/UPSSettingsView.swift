@@ -12,10 +12,12 @@ import SwiftSnmpKit
 struct MacOSSettingsView: View {
     @ObservedObject var monitoringService: UPSMonitoringService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showingAddDevice = false
     @State private var selectedTab = "devices"
     @State private var hoveredCard: String? = nil
     @State private var showingDiscovery = false
+    @State private var showingQuitConfirmation = false
     @StateObject private var discoveryService = DiscoveryService()
     
     var body: some View {
@@ -31,7 +33,10 @@ struct MacOSSettingsView: View {
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [Color.primary, Color.blue.opacity(0.8)],
+                                    colors: [
+                                        colorScheme == .dark ? Color.white : Color.black,
+                                        Color.blue.opacity(0.8)
+                                    ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -39,10 +44,16 @@ struct MacOSSettingsView: View {
                         
                         Spacer()
                         
-                        LiquidGlassButton("Done", style: .primary) {
-                            dismiss()
+                        HStack(spacing: 12) {
+                            LiquidGlassButton("Quit App", icon: "power", style: .secondary) {
+                                showingQuitConfirmation = true
+                            }
+                            
+                            LiquidGlassButton("Done", style: .primary) {
+                                dismiss()
+                            }
+                            .keyboardShortcut(.defaultAction)
                         }
-                        .keyboardShortcut(.defaultAction)
                     }
                 }
                 .padding(20)
@@ -93,6 +104,18 @@ struct MacOSSettingsView: View {
         .sheet(isPresented: $showingDiscovery) {
             DeviceDiscoveryView(discoveryService: discoveryService, monitoringService: monitoringService)
         }
+        .confirmationDialog(
+            "Quit UPS Monitoring?",
+            isPresented: $showingQuitConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Quit", role: .destructive) {
+                NSApplication.shared.terminate(nil)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("All monitoring will stop and the app will close.")
+        }
     }
     
     @ViewBuilder
@@ -123,7 +146,7 @@ struct MacOSSettingsView: View {
                 
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(isSelected ? .primary : .secondary)
+                    .foregroundColor(isSelected ? (colorScheme == .dark ? .white : .black) : .secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 
@@ -183,7 +206,7 @@ struct MacOSSettingsView: View {
                         HStack {
                             Text("UPS Devices")
                                 .font(.system(size: 20, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
+                                .foregroundColor(colorScheme == .dark ? .white : .black)
                             
                             Spacer()
                             
@@ -247,7 +270,7 @@ struct MacOSSettingsView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Monitoring")
                                 .font(.system(size: 20, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
+                                .foregroundColor(colorScheme == .dark ? .white : .black)
                             
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
@@ -293,6 +316,7 @@ struct LiquidGlassDeviceSettingsRow: View {
     let device: UPSDevice
     let monitoringService: UPSMonitoringService
     @Binding var hoveredCard: String?
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showingEditDevice = false
     @State private var showingConnectivityTest = false
     @State private var isHovered = false
@@ -305,7 +329,7 @@ struct LiquidGlassDeviceSettingsRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(device.name)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(colorScheme == .dark ? .white : .black)
                 
                 HStack(spacing: 8) {
                     Text(device.connectionType.rawValue)
@@ -434,6 +458,7 @@ struct LiquidGlassDeviceSettingsRow: View {
 struct MacOSAddDeviceView: View {
     @ObservedObject var monitoringService: UPSMonitoringService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredCard: String? = nil
     
     @State private var name = ""
@@ -485,7 +510,10 @@ struct MacOSAddDeviceView: View {
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [Color.primary, Color.blue.opacity(0.8)],
+                            colors: [
+                                colorScheme == .dark ? Color.white : Color.black,
+                                Color.blue.opacity(0.8)
+                            ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -520,7 +548,7 @@ struct MacOSAddDeviceView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Device Information")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(colorScheme == .dark ? .white : .black)
                 
                 VStack(spacing: 12) {
                     LabeledContent("Device Name") {
@@ -566,7 +594,7 @@ struct MacOSAddDeviceView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("NUT Configuration")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
                     
                     Text("Network UPS Tools (NUT) configuration for communicating with UPS servers.")
                         .font(.system(size: 12))
@@ -599,7 +627,7 @@ struct MacOSAddDeviceView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("SNMP Configuration")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
                     
                     Text("SNMP v1 configuration. Most UPS devices use 'public' as the default community string.")
                         .font(.system(size: 12))
@@ -620,7 +648,7 @@ struct MacOSAddDeviceView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Battery Tracking")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
                     
                     Text("Optional battery information for replacement planning.")
                         .font(.system(size: 12))

@@ -10,6 +10,7 @@ import UserNotifications
 
 struct NotificationSettingsView: View {
     @StateObject private var notificationService = NotificationService.shared
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showingSystemPreferences = false
     @State private var hoveredCard: String? = nil
     
@@ -108,7 +109,10 @@ struct NotificationSettingsView: View {
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.primary, Color.blue.opacity(0.8)],
+                                colors: [
+                                    colorScheme == .dark ? Color.white : Color.black,
+                                    Color.blue.opacity(0.8)
+                                ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -153,6 +157,7 @@ struct NotificationSettingsView: View {
                 HStack {
                     Text("Alert Types")
                         .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
                     
                     Spacer()
                     
@@ -272,6 +277,7 @@ struct NotificationSettingsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Test Notifications")
                     .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(colorScheme == .dark ? .white : .black)
                 
                 Text("Send a test notification to verify your settings are working correctly.")
                     .font(.system(size: 13))
@@ -440,6 +446,7 @@ struct NotificationToggleRow: View {
     let description: String
     @Binding var isOn: Bool
     let accentColor: Color
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
     
     var body: some View {
@@ -497,7 +504,7 @@ struct NotificationToggleRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(colorScheme == .dark ? .white : .black)
                 
                 Text(description)
                     .font(.system(size: 12))

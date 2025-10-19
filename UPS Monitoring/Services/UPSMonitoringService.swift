@@ -20,6 +20,7 @@ class UPSMonitoringService: ObservableObject {
     
     private var monitoringTimer: Timer?
     private let updateInterval: TimeInterval = 30.0 // 30 seconds
+    private let dataService = DataPersistenceService.shared
     
     // SNMP OIDs for UPS monitoring (RFC 1628 - UPS MIB + CyberPower specific)
     private struct UPSOIDs {
@@ -158,7 +159,17 @@ class UPSMonitoringService: ObservableObject {
                 status = try await querySNMPDevice(device)
             }
             
-            statusData[device.id] = status
+            // Get previous status for energy calculations
+            let previousStatus = statusData[device.id]
+            var updatedStatus = status
+            
+            // Update energy tracking
+            await updateEnergyTracking(for: device.id, currentStatus: &updatedStatus, previousStatus: previousStatus)
+            
+            statusData[device.id] = updatedStatus
+            
+            // Save power sample and statistics
+            savePowerData(for: device.id, status: updatedStatus)
             
         } catch {
             var errorStatus = statusData[device.id] ?? UPSStatus(deviceId: device.id)
@@ -167,6 +178,55 @@ class UPSMonitoringService: ObservableObject {
             errorStatus.lastUpdate = Date()
             statusData[device.id] = errorStatus
         }
+    }
+    
+    private func updateEnergyTracking(for deviceId: UUID, currentStatus: inout UPSStatus, previousStatus: UPSStatus?) async {
+        // Get the last power sample from persistence
+        let lastSample = dataService.getLatestPowerSample(for: deviceId)
+        
+        guard let currentPower = currentStatus.outputPower,
+              let currentLoad = currentStatus.load else {
+            return
+        }
+        
+        // Initialize energy tracking if this is the first reading
+        if currentStatus.energyTrackingStartDate == nil {
+            currentStatus.energyTrackingStartDate = Date()
+            currentStatus.cumulativeEnergyWh = 0
+        } else if let lastSample = lastSample {
+            // Calculate energy consumed since last sample
+            let energyConsumed = currentStatus.energyConsumedSince(lastSample, currentPower: currentPower)
+            currentStatus.cumulativeEnergyWh = (currentStatus.cumulativeEnergyWh ?? 0) + energyConsumed
+        }
+        
+        // Update power tracking
+        currentStatus.averagePowerW = currentPower
+        currentStatus.peakPowerW = max(currentStatus.peakPowerW ?? currentPower, currentPower)
+        
+        // Create current power sample for future calculations
+        currentStatus.lastPowerSample = PowerSample(
+            timestamp: Date(),
+            powerWatts: currentPower,
+            voltageV: currentStatus.outputVoltage,
+            currentA: nil, // Current not typically available from UPS data
+            loadPercent: currentLoad
+        )
+    }
+    
+    private func savePowerData(for deviceId: UUID, status: UPSStatus) {
+        guard let power = status.outputPower else { return }
+        
+        // Save power sample
+        dataService.savePowerSample(
+            deviceId: deviceId,
+            power: power,
+            voltage: status.outputVoltage,
+            current: nil, // Current typically not available
+            load: status.load
+        )
+        
+        // Save/update device statistics
+        dataService.saveDeviceStatistics(deviceId: deviceId, status: status)
     }
     
     private func queryNUTDevice(_ device: UPSDevice) async throws -> UPSStatus {

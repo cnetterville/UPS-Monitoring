@@ -173,6 +173,18 @@ extension UPSStatus {
             return String(format: "%.2f kWh", energy / 1000.0)
         }
     }
+    
+    var calculatedEfficiency: Double? {
+        guard let inputVoltage = inputVoltage,
+              let outputVoltage = outputVoltage,
+              inputVoltage > 0 else { return nil }
+        
+        return min((outputVoltage / inputVoltage) * 100, 100)
+    }
+    
+    var currentEnergyRate: Double? {
+        return outputPower
+    }
 }
 
 enum BatteryStatus: Int, CaseIterable, Codable, CustomStringConvertible {
