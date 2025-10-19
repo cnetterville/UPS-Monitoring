@@ -675,13 +675,11 @@ struct EnergyStatsView: View {
         return formatter.localizedString(for: date, relativeTo: Date())
     }
     
+    @MainActor
     private func exportData() {
         Task {
             if let fileURL = dataService.exportEnergyData(for: device.id, timeRange: selectedTimeRange) {
-                await MainActor.run {
-                    // Show share sheet (you might want to implement this with a proper share sheet)
-                    NSWorkspace.shared.open(fileURL)
-                }
+                NSWorkspace.shared.open(fileURL)
             }
         }
     }
