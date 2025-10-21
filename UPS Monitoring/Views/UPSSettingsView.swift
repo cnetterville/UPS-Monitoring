@@ -1215,7 +1215,7 @@ struct MacOSConnectivityTestView: View {
                     connection.receive(minimumIncompleteLength: 1, maximumLength: 2048) { data, _, _, error in
                         Task { @MainActor in
                             if let data = data, let response = String(data: data, encoding: .utf8) {
-                                let trimmedResponse = response.trimmingCharacters(in: .whitespacesAndNewlines)
+                                _ = response.trimmingCharacters(in: .whitespacesAndNewlines)
                                 self.addResult("📋 Available UPS devices:")
                                 let lines = response.components(separatedBy: .newlines)
                                 let validLines = lines.filter { !$0.isEmpty && !$0.hasPrefix("BEGIN") && !$0.hasPrefix("END") }
