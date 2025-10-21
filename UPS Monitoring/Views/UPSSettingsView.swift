@@ -63,7 +63,7 @@ struct MacOSSettingsView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         liquidGlassSidebarButton(
                             title: "Devices",
-                            icon: "poweroutlet.type.a",
+                            icon: "battery.100percent",
                             isSelected: selectedTab == "devices"
                         ) {
                             selectedTab = "devices"
@@ -94,10 +94,11 @@ struct MacOSSettingsView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.trailing, 20)
                 }
             }
         }
-        .frame(width: 750, height: 600)
+        .frame(width: 850, height: 720)
         .sheet(isPresented: $showingAddDevice) {
             MacOSAddDeviceView(monitoringService: monitoringService)
         }
@@ -303,11 +304,10 @@ struct MacOSSettingsView: View {
                         }
                     }
                 }
-                
-                Spacer(minLength: 24)
             }
             .padding(24)
         }
+        .clipped()
     }
 }
 
@@ -361,12 +361,14 @@ struct LiquidGlassDeviceSettingsRow: View {
                             )
                         )
                     
-                    Text("\(device.host):\(device.port)")
+                    Text("\(device.host):\(device.port.formatted(.number.grouping(.never)))")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
             }
+            .frame(minWidth: 200, alignment: .leading)
             
             Spacer(minLength: 20)
             
@@ -566,7 +568,7 @@ struct MacOSAddDeviceView: View {
                     }
                     
                     LabeledContent("Port") {
-                        TextField("Port", value: $port, format: .number)
+                        TextField("Port", value: $port, format: .number.grouping(.never))
                             .textFieldStyle(GlassTextFieldStyle())
                             .frame(maxWidth: 100)
                     }
@@ -825,7 +827,7 @@ struct MacOSEditDeviceView: View {
                     }
                     
                     LabeledContent("Port") {
-                        TextField("Port", value: $port, format: .number)
+                        TextField("Port", value: $port, format: .number.grouping(.never))
                             .textFieldStyle(.roundedBorder)
                             .frame(maxWidth: 100)
                     }
@@ -946,7 +948,7 @@ struct MacOSConnectivityTestView: View {
                         .font(.headline)
                         .fontWeight(.medium)
                     
-                    Text("\(device.connectionType.rawValue) connection to \(device.host):\(device.port)")
+                    Text("\(device.connectionType.rawValue) connection to \(device.host):\(device.port.formatted(.number.grouping(.never)))")
                         .font(.body)
                         .foregroundStyle(.secondary)
                 }
@@ -1004,7 +1006,7 @@ struct MacOSConnectivityTestView: View {
         isRunning = true
         
         addResult("🚀 Starting connectivity test...")
-        addResult("📍 Target: \(device.connectionType.rawValue) - \(device.host):\(device.port)")
+        addResult("📍 Target: \(device.connectionType.rawValue) - \(device.host):\(device.port.formatted(.number.grouping(.never)))")
         
         Task {
             // Basic network connectivity test
@@ -1106,44 +1108,122 @@ struct MacOSConnectivityTestView: View {
         
         connection.start(queue: DispatchQueue.global())
         
-        // Wait for connection state
-        try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
+        // Wait longer for connection and check state more carefully
+        var attempts = 0
+        while attempts < 10 && connection.state != .ready && connection.state != .failed(NWError.dns(DNSServiceErrorType(kDNSServiceErr_NoError))) {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+            attempts += 1
+        }
         
         await MainActor.run {
-            if connection.state == .ready {
+            switch connection.state {
+            case .ready:
                 addResult("✅ TCP connection established")
                 testNUTCommands(connection: connection)
-            } else {
-                addResult("❌ TCP connection failed: \(connection.state)")
-                addResult("💡 Check if NUT server is running")
+            case .failed(let error):
+                addResult("❌ TCP connection failed: \(error)")
+                addResult("💡 Check if NUT server is running on port \(device.port)")
+            case .waiting(let error):
+                addResult("⏳ Connection waiting: \(error)")
+                addResult("💡 Connection timed out - check firewall/network")
+            default:
+                addResult("❓ Connection state: \(connection.state)")
+                addResult("💡 Try using SNMP instead if device doesn't support NUT")
             }
         }
         
-        connection.cancel()
+        // Clean up connection after a delay
+        Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+            connection.cancel()
+        }
     }
     
     private func testNUTCommands(connection: NWConnection) {
-        let command = "LIST UPS\n"
+        let upsName = device.upsName ?? "ups"
+        let command = "LIST VAR \(upsName)\n"
         let data = command.data(using: .utf8)!
         
-        addResult("📤 Sending: LIST UPS")
+        addResult("📤 Sending: LIST VAR \(upsName)")
+        
+        // Check if connection is still ready before sending
+        guard connection.state == .ready else {
+            addResult("❌ Connection not ready for sending commands")
+            return
+        }
         
         connection.send(content: data, completion: .contentProcessed { error in
             Task { @MainActor in
                 if let error = error {
                     self.addResult("❌ Failed to send NUT command: \(error)")
+                    self.addResult("💡 The NUT server may not be responding or may require authentication")
                 } else {
-                    self.addResult("✅ NUT command sent")
+                    self.addResult("✅ NUT command sent successfully")
                     
-                    connection.receive(minimumIncompleteLength: 1, maximumLength: 2048) { data, _, _, error in
+                    // Set a timeout for receiving data
+                    connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, error in
                         Task { @MainActor in
                             if let error = error {
                                 self.addResult("❌ NUT response error: \(error)")
+                                self.addResult("💡 UPS '\(upsName)' may not exist or server requires login")
                             } else if let data = data, let response = String(data: data, encoding: .utf8) {
-                                self.addResult("📥 NUT response received")
+                                let trimmedResponse = response.trimmingCharacters(in: .whitespacesAndNewlines)
+                                self.addResult("📥 NUT response received (\(data.count) bytes)")
+                                
+                                if trimmedResponse.starts(with: "ERR") {
+                                    self.addResult("❌ NUT Error: \(trimmedResponse)")
+                                    if trimmedResponse.contains("UNKNOWN-UPS") {
+                                        self.addResult("💡 UPS '\(upsName)' not found. Try 'LIST UPS' first to see available UPS devices")
+                                        self.testListUPS(connection: connection)
+                                    } else if trimmedResponse.contains("ACCESS-DENIED") {
+                                        self.addResult("💡 Access denied. Check username/password configuration")
+                                    }
+                                } else {
+                                    let lines = response.components(separatedBy: .newlines)
+                                    let validLines = lines.filter { !$0.isEmpty && !$0.hasPrefix("BEGIN") && !$0.hasPrefix("END") }
+                                    
+                                    if validLines.isEmpty {
+                                        self.addResult("⚠️ Empty response - UPS '\(upsName)' may not have variables")
+                                    } else {
+                                        self.addResult("📊 UPS Variables (\(validLines.count) found):")
+                                        for line in validLines {
+                                            self.addResult("   \(line)")
+                                        }
+                                    }
+                                }
+                            } else {
+                                self.addResult("❌ No data received from NUT server")
+                            }
+                        }
+                    }
+                }
+            }
+        })
+    }
+    
+    private func testListUPS(connection: NWConnection) {
+        let command = "LIST UPS\n"
+        let data = command.data(using: .utf8)!
+        
+        addResult("📤 Sending: LIST UPS (to see available UPS devices)")
+        
+        connection.send(content: data, completion: .contentProcessed { error in
+            Task { @MainActor in
+                if let error = error {
+                    self.addResult("❌ Failed to send LIST UPS command: \(error)")
+                } else {
+                    connection.receive(minimumIncompleteLength: 1, maximumLength: 2048) { data, _, _, error in
+                        Task { @MainActor in
+                            if let data = data, let response = String(data: data, encoding: .utf8) {
+                                let trimmedResponse = response.trimmingCharacters(in: .whitespacesAndNewlines)
+                                self.addResult("📋 Available UPS devices:")
                                 let lines = response.components(separatedBy: .newlines)
-                                for line in lines.prefix(5) {
-                                    if !line.isEmpty {
+                                let validLines = lines.filter { !$0.isEmpty && !$0.hasPrefix("BEGIN") && !$0.hasPrefix("END") }
+                                
+                                if validLines.isEmpty {
+                                    self.addResult("   No UPS devices found")
+                                } else {
+                                    for line in validLines {
                                         self.addResult("   \(line)")
                                     }
                                 }
@@ -1154,7 +1234,7 @@ struct MacOSConnectivityTestView: View {
             }
         })
     }
-    
+
     @MainActor
     private func addResult(_ message: String) {
         testResults.append(message)
