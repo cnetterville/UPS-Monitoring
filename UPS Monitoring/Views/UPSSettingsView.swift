@@ -211,7 +211,7 @@ struct MacOSSettingsView: View {
                             
                             Spacer()
                             
-                            Text("\(monitoringService.devices.count) of 4")
+                            Text("\(monitoringService.devices.count) devices")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(.secondary)
                                 .textCase(.uppercase)
@@ -237,25 +237,23 @@ struct MacOSSettingsView: View {
                                 )
                             }
                             
-                            if monitoringService.devices.count < 4 {
-                                HStack {
-                                    LiquidGlassButton(
-                                        "Add UPS Device",
-                                        icon: "plus.circle.fill",
-                                        style: .primary
-                                    ) {
-                                        showingAddDevice = true
-                                    }
-
-                                    Spacer()
-                                    Button("Discover on Network") {
-                                        showingDiscovery = true
-                                    }
-                                    .buttonStyle(.borderedProminent)
+                            HStack {
+                                LiquidGlassButton(
+                                    "Add UPS Device",
+                                    icon: "plus.circle.fill",
+                                    style: .primary
+                                ) {
+                                    showingAddDevice = true
                                 }
+
+                                Spacer()
+                                Button("Discover on Network") {
+                                    showingDiscovery = true
+                                }
+                                .buttonStyle(.borderedProminent)
                             }
                         }
-                        
+
                         if monitoringService.devices.count >= 4 {
                             Text("Maximum of 4 devices supported.")
                                 .font(.system(size: 11))
