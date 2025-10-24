@@ -22,6 +22,15 @@ class UPSMonitoringService: ObservableObject {
     private let updateInterval: TimeInterval = 30.0 // 30 seconds
     private let dataService = DataPersistenceService.shared
     
+    private let maxConcurrentQueries = 4 // Limit concurrent network operations
+    private var lastStatusUpdate: Date?
+    private let statusUpdateThrottle: TimeInterval = 1.0 // Batch UI updates
+    private var pendingStatusUpdates: [UUID: UPSStatus] = [:]
+    private var statusUpdateTimer: Timer?
+    
+    private var snmpConnectionPool: [String: Date] = [:]
+    private let connectionPoolTimeout: TimeInterval = 300 // 5 minutes
+    
     // SNMP OIDs for UPS monitoring (RFC 1628 - UPS MIB + CyberPower specific)
     private struct UPSOIDs {
         // Basic UPS Info
@@ -82,6 +91,7 @@ class UPSMonitoringService: ObservableObject {
     func removeDevice(_ device: UPSDevice) {
         devices.removeAll { $0.id == device.id }
         statusData.removeValue(forKey: device.id)
+        pendingStatusUpdates.removeValue(forKey: device.id)
         saveDevices()
     }
     
@@ -137,15 +147,20 @@ class UPSMonitoringService: ObservableObject {
     }
     
     private func updateAllDevices() async {
-        // Process devices in parallel but limit concurrency to avoid overwhelming the system
+        let semaphore = AsyncSemaphore(value: maxConcurrentQueries)
+        
         await withTaskGroup(of: Void.self) { group in
             for device in devices where device.isEnabled {
                 group.addTask {
-                    await self.updateDeviceStatus(device)
+                    await semaphore.withSemaphore {
+                        await self.updateDeviceStatus(device)
+                    }
                 }
             }
         }
         lastRefreshTime = Date()
+        
+        await flushPendingStatusUpdates()
     }
     
     private func updateDeviceStatus(_ device: UPSDevice) async {
@@ -166,18 +181,30 @@ class UPSMonitoringService: ObservableObject {
             // Update energy tracking
             await updateEnergyTracking(for: device.id, currentStatus: &updatedStatus, previousStatus: previousStatus)
             
-            statusData[device.id] = updatedStatus
+            pendingStatusUpdates[device.id] = updatedStatus
             
-            // Save power sample and statistics
-            savePowerData(for: device.id, status: updatedStatus)
+            // Save power sample and statistics (async to avoid blocking)
+            Task.detached { @MainActor in
+                self.savePowerData(for: device.id, status: updatedStatus)
+            }
             
         } catch {
             var errorStatus = statusData[device.id] ?? UPSStatus(deviceId: device.id)
             errorStatus.isOnline = false
             errorStatus.status = "Error: \(error.localizedDescription)"
             errorStatus.lastUpdate = Date()
-            statusData[device.id] = errorStatus
+            pendingStatusUpdates[device.id] = errorStatus
         }
+    }
+    
+    private func flushPendingStatusUpdates() async {
+        guard !pendingStatusUpdates.isEmpty else { return }
+        
+        // Update all at once to trigger fewer UI updates
+        for (deviceId, status) in pendingStatusUpdates {
+            statusData[deviceId] = status
+        }
+        pendingStatusUpdates.removeAll()
     }
     
     private func updateEnergyTracking(for deviceId: UUID, currentStatus: inout UPSStatus, previousStatus: UPSStatus?) async {

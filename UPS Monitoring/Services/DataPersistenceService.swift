@@ -28,6 +28,12 @@ class DataPersistenceService {
     private var powerSamples: [String: [PowerSampleData]] = [:]
     private var deviceStatistics: [String: [DeviceStatisticsData]] = [:]
     
+    private var isDirty = false
+    private var lastSaveTime = Date()
+    private let saveInterval: TimeInterval = 60.0 // Save every minute instead of immediately
+    private var saveTimer: Timer?
+    private let maxSamplesPerDevice = 10080 // 1 week at 1-minute intervals
+    
     // MARK: - Initialization
     
     private init() {
@@ -38,9 +44,46 @@ class DataPersistenceService {
         loadPowerSamples()
         loadDeviceStatistics()
         
-        // Start cleanup task
-        Task {
-            await startPeriodicCleanup()
+        // Start batched save timer instead of continuous cleanup
+        startBatchedSaveTimer()
+        
+        // Schedule cleanup less frequently (weekly instead of daily)
+        schedulePeriodicCleanup()
+    }
+    
+    // Batched saving to reduce I/O
+    private func startBatchedSaveTimer() {
+        saveTimer = Timer.scheduledTimer(withTimeInterval: saveInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.saveIfNeeded()
+            }
+        }
+    }
+    
+    private func saveIfNeeded() async {
+        guard isDirty else { return }
+        
+        isDirty = false
+        lastSaveTime = Date()
+        
+        // Perform saves asynchronously to avoid blocking main thread
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor in
+                self.savePowerSamples()
+            }
+            group.addTask { @MainActor in
+                self.saveDeviceStatistics()
+            }
+        }
+    }
+    
+    // Schedule cleanup less frequently
+    private func schedulePeriodicCleanup() {
+        // Run cleanup weekly instead of continuously
+        Timer.scheduledTimer(withTimeInterval: 7 * 24 * 60 * 60, repeats: true) { _ in
+            Task { @MainActor in
+                await self.cleanupOldData()
+            }
         }
     }
     
@@ -63,7 +106,14 @@ class DataPersistenceService {
         }
         
         powerSamples[deviceKey]?.append(sample)
-        savePowerSamples()
+        
+        // Limit samples per device to prevent memory bloat
+        if let sampleCount = powerSamples[deviceKey]?.count, sampleCount > maxSamplesPerDevice {
+            powerSamples[deviceKey]?.removeFirst(sampleCount - maxSamplesPerDevice)
+        }
+        
+        // Mark as dirty instead of immediate save
+        isDirty = true
     }
     
     func savePowerSamples(for deviceId: UUID, samples: [PowerSample]) {

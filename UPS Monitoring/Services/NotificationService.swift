@@ -58,9 +58,13 @@ class NotificationService: NSObject, ObservableObject {
     private var deviceOnlineTimers: [UUID: Timer] = [:]
     private var stableStatusData: [UUID: UPSStatus] = [:]
     
+    private var statusCleanupTimer: Timer?
+    private var pendingStatusChanges: [UUID: (status: UPSStatus, timestamp: Date)] = [:]
+    
     // Timing constants (in seconds)
     private let offlineDebounceTime: TimeInterval = 30.0 // Device must be offline for 30 seconds
     private let onlineDebounceTime: TimeInterval = 10.0  // Device must be online for 10 seconds
+    private let statusCleanupInterval: TimeInterval = 5.0 // Check pending changes every 5 seconds
     
     private var cancellables = Set<AnyCancellable>()
     

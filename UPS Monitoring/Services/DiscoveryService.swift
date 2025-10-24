@@ -15,16 +15,28 @@ struct DiscoveredUPSDevice: Identifiable {
 class DiscoveryService: ObservableObject {
     @Published var discoveredDevices: [DiscoveredUPSDevice] = []
     @Published var isScanning = false
+    
+    private let maxConcurrentScans = 10 // Limit concurrent network operations
+    private let scanDelay: TimeInterval = 0.1 // Delay between batches
 
     func discoverSNMPDevices(subnet: String, community: String = "public") async {
         isScanning = true
         discoveredDevices = []
+        
+        // Use semaphore to limit concurrent operations
+        let semaphore = AsyncSemaphore(value: maxConcurrentScans)
+        
         await withTaskGroup(of: DiscoveredUPSDevice?.self) { group in
             for i in 1...254 {
                 let ip = "\(subnet).\(i)"
                 group.addTask {
-                    let result = await SNMPDiscovery.snmpPing(host: ip, community: community)
-                    return result
+                    await semaphore.withSemaphore {
+                        // Add small delay to prevent network flooding
+                        try? await Task.sleep(nanoseconds: UInt64(self.scanDelay * 1_000_000_000))
+                        
+                        let result = await SNMPDiscovery.snmpPing(host: ip, community: community)
+                        return result
+                    }
                 }
             }
             for await result in group {
@@ -39,12 +51,21 @@ class DiscoveryService: ObservableObject {
     func discoverNUTDevices(subnet: String) async {
         isScanning = true
         discoveredDevices = []
+        
+        // Use semaphore to limit concurrent operations
+        let semaphore = AsyncSemaphore(value: maxConcurrentScans)
+        
         await withTaskGroup(of: DiscoveredUPSDevice?.self) { group in
             for i in 1...254 {
                 let ip = "\(subnet).\(i)"
                 group.addTask {
-                    let result = await NUTDiscovery.nutPing(host: ip)
-                    return result
+                    await semaphore.withSemaphore {
+                        // Add small delay to prevent network flooding
+                        try? await Task.sleep(nanoseconds: UInt64(self.scanDelay * 1_000_000_000))
+                        
+                        let result = await NUTDiscovery.nutPing(host: ip)
+                        return result
+                    }
                 }
             }
             for await result in group {

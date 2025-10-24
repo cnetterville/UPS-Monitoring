@@ -16,6 +16,9 @@ class MenuBarManager: ObservableObject {
     private weak var monitoringService: UPSMonitoringService?
     private var cancellables = Set<AnyCancellable>()
     
+    private var iconCache: [String: NSImage] = [:]
+    private var lastIconState: String?
+    
     @Published var launchAtLogin: Bool {
         didSet {
             UserDefaults.standard.set(launchAtLogin, forKey: "LaunchAtLogin")
@@ -193,6 +196,26 @@ class MenuBarManager: ObservableObject {
         guard let statusBarButton = statusBarItem?.button else { return }
 
         let overallStatus = getOverallStatus()
+        
+        // Create cache key based on status
+        let iconState: String
+        switch overallStatus {
+        case .good:
+            iconState = "good"
+        case .warning:
+            iconState = "warning"
+        case .critical:
+            iconState = "critical"
+        case .offline:
+            iconState = "offline"
+        }
+        
+        // Use cached icon if available
+        if let cachedIcon = iconCache[iconState], iconState == lastIconState {
+            statusBarButton.image = cachedIcon
+            statusBarButton.toolTip = "UPS Monitoring - \(getOverallStatusText())"
+            return
+        }
 
         // Use battery icon
         let iconName = "battery.100"
@@ -262,6 +285,10 @@ class MenuBarManager: ObservableObject {
         upsText.draw(in: textRect)
         
         compositeImage.unlockFocus()
+        
+        // Cache the generated icon
+        iconCache[iconState] = compositeImage
+        lastIconState = iconState
         
         statusBarButton.image = compositeImage
         statusBarButton.image?.isTemplate = false
