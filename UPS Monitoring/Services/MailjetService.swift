@@ -64,15 +64,42 @@ class MailjetService: ObservableObject {
     }
     
     private func saveConfiguration() {
-        UserDefaults.standard.set(apiKey, forKey: "mailjet_api_key")
-        UserDefaults.standard.set(apiSecret, forKey: "mailjet_api_secret")
+        // Store sensitive data in Keychain
+        do {
+            if !apiKey.isEmpty {
+                try KeychainService.shared.store(apiKey, for: KeychainService.Keys.mailjetAPIKey)
+            } else {
+                try? KeychainService.shared.delete(for: KeychainService.Keys.mailjetAPIKey)
+            }
+            
+            if !apiSecret.isEmpty {
+                try KeychainService.shared.store(apiSecret, for: KeychainService.Keys.mailjetAPISecret)
+            } else {
+                try? KeychainService.shared.delete(for: KeychainService.Keys.mailjetAPISecret)
+            }
+        } catch {
+            print("❌ Failed to save credentials to Keychain: \(error.localizedDescription)")
+        }
+        
+        // Store non-sensitive data in UserDefaults
         UserDefaults.standard.set(fromEmail, forKey: "mailjet_from_email")
         UserDefaults.standard.set(fromName, forKey: "mailjet_from_name")
     }
     
     private func loadConfiguration() {
-        apiKey = UserDefaults.standard.string(forKey: "mailjet_api_key") ?? ""
-        apiSecret = UserDefaults.standard.string(forKey: "mailjet_api_secret") ?? ""
+        // Load sensitive data from Keychain
+        do {
+            apiKey = try KeychainService.shared.retrieve(for: KeychainService.Keys.mailjetAPIKey) ?? ""
+            apiSecret = try KeychainService.shared.retrieve(for: KeychainService.Keys.mailjetAPISecret) ?? ""
+            print("🔐 Successfully loaded credentials from Keychain")
+        } catch {
+            print("❌ Failed to load credentials from Keychain: \(error.localizedDescription)")
+            // Fallback to empty strings
+            apiKey = ""
+            apiSecret = ""
+        }
+        
+        // Load non-sensitive data from UserDefaults
         fromEmail = UserDefaults.standard.string(forKey: "mailjet_from_email") ?? ""
         fromName = UserDefaults.standard.string(forKey: "mailjet_from_name") ?? "UPS Monitoring"
         updateConfiguration()

@@ -256,20 +256,23 @@ struct MailjetConfigurationView: View {
                             .foregroundColor(.green)
                     }
                     
-                    Text("Your API credentials are stored securely in the macOS Keychain and are never transmitted except to Mailjet's servers.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .padding(.leading, 20)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Your API credentials are stored securely in the macOS Keychain and are never transmitted except to Mailjet's servers.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        
+                        Text("• macOS will prompt you for keychain access when saving credentials for the first time")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .padding(.leading, 8)
+                        
+                        Text("• You can grant or deny this access - denying will prevent email notifications")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .padding(.leading, 8)
+                    }
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(.green.opacity(0.1))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(.green.opacity(0.3), lineWidth: 1)
-                        )
-                )
+                .padding(.leading, 20)
             }
         }
     }
@@ -371,10 +374,23 @@ struct MailjetConfigurationView: View {
     }
     
     private func saveConfiguration() {
-        mailjetService.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        mailjetService.apiSecret = apiSecret.trimmingCharacters(in: .whitespacesAndNewlines)
-        mailjetService.fromEmail = fromEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-        mailjetService.fromName = fromName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedApiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedApiSecret = apiSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedFromEmail = fromEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedFromName = fromName.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Show keychain access message if this is the first time saving credentials
+        let isFirstTimeSetup = mailjetService.apiKey.isEmpty && mailjetService.apiSecret.isEmpty
+        
+        if isFirstTimeSetup && (!trimmedApiKey.isEmpty || !trimmedApiSecret.isEmpty) {
+            // This will trigger the keychain access prompt
+            print("🔐 First time saving credentials - Keychain access will be requested")
+        }
+        
+        mailjetService.apiKey = trimmedApiKey
+        mailjetService.apiSecret = trimmedApiSecret
+        mailjetService.fromEmail = trimmedFromEmail
+        mailjetService.fromName = trimmedFromName
     }
     
     private func sendTestEmail() {
