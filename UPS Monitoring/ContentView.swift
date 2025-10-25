@@ -10,31 +10,47 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var monitoringService = UPSMonitoringService()
     @Environment(\.colorScheme) private var colorScheme
-    @State private var showingSettings = false
+    @State private var selectedTab = "monitoring"
     @State private var isRefreshing = false
     @State private var hoveredCard: String? = nil
     @State private var showingNUTDebug = false
     @State private var selectedDeviceForDebug: UPSDevice?
+    @State private var showingAddDevice = false
+    @State private var showingDiscovery = false
+    @State private var showingQuitConfirmation = false
+    @StateObject private var discoveryService = DiscoveryService()
     
     var body: some View {
         ZStack {
             // Liquid glass animated background
             LiquidGlassBackground()
             
-            NavigationSplitView {
-                // Liquid Glass Sidebar
-                liquidGlassSidebar
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 350)
-            } detail: {
-                // Liquid Glass Detail View
-                liquidGlassDetailView
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 0) {
+                // Header Section
+                headerSection
+                
+                // Tab Navigation
+                tabNavigation
+                
+                // Main Content Area
+                Group {
+                    switch selectedTab {
+                    case "monitoring":
+                        monitoringView
+                    case "devices":
+                        devicesManagementView
+                    case "notifications":
+                        notificationsView
+                    default:
+                        monitoringView
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
             }
         }
         .navigationTitle("")
-        .sheet(isPresented: $showingSettings) {
-            MacOSSettingsView(monitoringService: monitoringService)
-        }
         .onAppear {
             // Set up menu bar manager with monitoring service
             MenuBarManager.shared.setMonitoringService(monitoringService)
@@ -48,360 +64,630 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showSettings)) { _ in
-            showingSettings = true
+            selectedTab = "devices"
         }
         .frame(minWidth: 900, minHeight: 650)
+        .sheet(isPresented: $showingAddDevice) {
+            MacOSAddDeviceView(monitoringService: monitoringService)
+        }
+        .sheet(isPresented: $showingDiscovery) {
+            DeviceDiscoveryView(discoveryService: discoveryService, monitoringService: monitoringService)
+        }
+        .confirmationDialog(
+            "Quit UPS Monitoring?",
+            isPresented: $showingQuitConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Quit", role: .destructive) {
+                NSApplication.shared.terminate(nil)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("All monitoring will stop and the app will close.")
+        }
     }
     
-    private var liquidGlassSidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Glass Header
-            LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "sidebar-header") {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("UPS Monitoring")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [
-                                        colorScheme == .dark ? Color.white : Color.black,
-                                        Color.blue.opacity(0.8)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+    // MARK: - Header Section
+    
+    private var headerSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "main-header") {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("UPS Monitoring")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    colorScheme == .dark ? Color.white : Color.black,
+                                    Color.blue.opacity(0.8)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
                             )
-                        
-                        Text("Real-time device status")
+                        )
+                    
+                    HStack(spacing: 16) {
+                        Text("Real-time device status and management")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 8) {
-                        Button {
-                            showingSettings = true
-                        } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Color.blue, Color.cyan],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .help("Settings")
-                        .keyboardShortcut(",", modifiers: .command)
                         
-                        Button {
-                            isRefreshing = true
-                            Task {
-                                await monitoringService.refreshAllDevices()
-                                isRefreshing = false
-                            }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Color.green, Color.mint],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
+                        if monitoringService.isMonitoring {
+                            HStack(spacing: 6) {
+                                Image(systemName: "dot.radiowaves.left.and.right")
+                                    .symbolEffect(.variableColor.iterative)
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color.green, Color.mint],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
                                     )
-                                )
-                                .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                                .animation(.linear(duration: 1).repeatWhile(isRefreshing), value: isRefreshing)
+                                    .font(.caption)
+                                
+                                Text("Monitoring Active")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.green)
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .disabled(isRefreshing || monitoringService.isLoading)
-                        .help("Refresh all devices")
-                        .keyboardShortcut("r", modifiers: .command)
+                        
+                        if let lastRefresh = monitoringService.lastRefreshTime {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                
+                                Text("Updated \(lastRefresh, style: .relative)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 12) {
+                    LiquidGlassButton(
+                        "Refresh",
+                        icon: "arrow.clockwise",
+                        style: .secondary
+                    ) {
+                        isRefreshing = true
+                        Task {
+                            await monitoringService.refreshAllDevices()
+                            isRefreshing = false
+                        }
+                    }
+                    .disabled(isRefreshing || monitoringService.isLoading)
+                    
+                    LiquidGlassButton(
+                        "Quit App",
+                        icon: "power",
+                        style: .destructive
+                    ) {
+                        showingQuitConfirmation = true
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
+        }
+        .padding(20)
+    }
+    
+    // MARK: - Tab Navigation
+    
+    private var tabNavigation: some View {
+        HStack(spacing: 0) {
+            tabButton(
+                title: "Monitoring",
+                icon: "chart.line.uptrend.xyaxis",
+                isSelected: selectedTab == "monitoring"
+            ) {
+                selectedTab = "monitoring"
+            }
             
-            Spacer(minLength: 16)
+            tabButton(
+                title: "Devices",
+                icon: "battery.100percent",
+                isSelected: selectedTab == "devices"
+            ) {
+                selectedTab = "devices"
+            }
             
-            if monitoringService.devices.isEmpty {
-                // Empty state with glass card
-                LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "empty-state") {
-                    VStack(spacing: 16) {
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    RadialGradient(
-                                        colors: [
-                                            Color.blue.opacity(0.2),
-                                            Color.blue.opacity(0.05)
-                                        ],
-                                        center: .center,
-                                        startRadius: 10,
-                                        endRadius: 40
-                                    )
-                                )
-                                .frame(width: 60, height: 60)
-                            
-                            Image(systemName: "poweroutlet.type.a")
-                                .font(.system(size: 24, weight: .semibold))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Color.blue, Color.cyan],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                        }
-                        
-                        VStack(spacing: 4) {
-                            Text("No UPS Devices")
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                            
-                            Text("Add UPS devices to start monitoring")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-            } else {
-                // Show loading indicator if service is loading
-                if monitoringService.isLoading {
-                    LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "loading") {
-                        HStack(spacing: 12) {
-                            ProgressView()
-                                .controlSize(.small)
-                            
-                            Text("Loading devices...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-                }
+            tabButton(
+                title: "Notifications",
+                icon: "bell",
+                isSelected: selectedTab == "notifications"
+            ) {
+                selectedTab = "notifications"
+            }
+            
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 8)
+    }
+    
+    @ViewBuilder
+    private func tabButton(
+        title: String,
+        icon: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(
+                        isSelected ?
+                        LinearGradient(
+                            colors: [Color.blue, Color.cyan],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ) :
+                        LinearGradient(
+                            colors: [Color.secondary, Color.secondary.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 16)
                 
-                // Glass Device List
-                ScrollView {
-                    LazyVStack(spacing: 12) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(isSelected ? (colorScheme == .dark ? .white : .black) : .secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.blue.opacity(0.2),
+                                                Color.cyan.opacity(0.1)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.3),
+                                                Color.blue.opacity(0.2)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                            )
+                    }
+                }
+            )
+        }
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedTab)
+    }
+    
+    // MARK: - Monitoring View
+    
+    private var monitoringView: some View {
+        ScrollView {
+            LazyVStack(spacing: 20) {
+                if monitoringService.devices.isEmpty {
+                    // Empty state
+                    LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "empty-monitoring") {
+                        VStack(spacing: 24) {
+                            ZStack {
+                                Circle()
+                                    .fill(
+                                        RadialGradient(
+                                            colors: [
+                                                Color.blue.opacity(0.3),
+                                                Color.blue.opacity(0.1),
+                                                Color.clear
+                                            ],
+                                            center: .center,
+                                            startRadius: 20,
+                                            endRadius: 60
+                                        )
+                                    )
+                                    .frame(width: 120, height: 120)
+                                
+                                Image(systemName: "poweroutlet.type.a")
+                                    .font(.system(size: 48, weight: .light))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color.blue, Color.cyan, Color.mint],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
+                            
+                            VStack(spacing: 12) {
+                                Text("No UPS Devices")
+                                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [
+                                                colorScheme == .dark ? Color.white : Color.black,
+                                                Color.blue.opacity(0.8)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                Text("Add your first UPS device to start monitoring")
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(3)
+                                    .padding(.horizontal, 20)
+                                LiquidGlassButton(
+                                    "Go to Devices Tab",
+                                    icon: "plus.circle.fill",
+                                    style: .primary
+                                ) {
+                                    selectedTab = "devices"
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Device grid
+                    LazyVGrid(columns: [
+                        GridItem(.flexible(), spacing: 20),
+                        GridItem(.flexible(), spacing: 20)
+                    ], spacing: 24) {
                         ForEach(monitoringService.devices) { device in
-                            LiquidGlassSidebarDeviceRow(
+                            LiquidGlassDeviceCard(
                                 device: device,
                                 status: monitoringService.statusData[device.id],
-                                isLoading: monitoringService.isLoading,
+                                monitoringService: monitoringService,
                                 hoveredCard: $hoveredCard
                             )
                         }
                     }
-                    .padding(.horizontal, 16)
+                    
+                    // Show loading indicator if service is loading
+                    if monitoringService.isLoading {
+                        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "loading-indicator") {
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                
+                                Text("Refreshing device status...")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Devices Management View
+    
+    private var devicesManagementView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // Device Management Section
+                LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "device-management") {
+                    VStack(alignment: .leading, spacing: 20) {
+                        HStack {
+                            Text("UPS Devices")
+                                .font(.system(size: 22, weight: .bold, design: .rounded))
+                                .foregroundColor(colorScheme == .dark ? .white : .black)
+                            
+                            Spacer()
+                            
+                            Text("\(monitoringService.devices.count) devices")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                                .tracking(0.5)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(.ultraThinMaterial)
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                                        )
+                                )
+                        }
+                        
+                        if monitoringService.devices.isEmpty {
+                            VStack(spacing: 16) {
+                                Image(systemName: "poweroutlet.type.a")
+                                    .font(.system(size: 32, weight: .light))
+                                    .foregroundStyle(.secondary)
+                                
+                                Text("No devices configured")
+                                    .font(.headline)
+                                    .foregroundColor(.secondary)
+                                
+                                Text("Add your first UPS device to start monitoring")
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .padding(.vertical, 40)
+                            .frame(maxWidth: .infinity)
+
+                        } else {
+                            VStack(spacing: 12) {
+                                ForEach(monitoringService.devices) { device in
+                                    DeviceManagementRow(
+                                        device: device,
+                                        monitoringService: monitoringService,
+                                        hoveredCard: $hoveredCard
+                                    )
+                                }
+                            }
+                        }
+                        
+                        HStack(spacing: 12) {
+                            LiquidGlassButton(
+                                "Add UPS Device",
+                                icon: "plus.circle.fill",
+                                style: .primary
+                            ) {
+                                showingAddDevice = true
+                            }
+                            .disabled(monitoringService.devices.count >= 4)
+
+                            LiquidGlassButton(
+                                "Discover Devices",
+                                icon: "magnifyingglass",
+                                style: .secondary
+                            ) {
+                                showingDiscovery = true
+                            }
+                            
+                            Spacer()
+                        }
+
+                        if monitoringService.devices.count >= 4 {
+                            Text("Maximum of 4 devices supported.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                
+                // Monitoring Settings Section
+                if !monitoringService.devices.isEmpty {
+                    LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "monitoring-settings") {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Monitoring Settings")
+                                .font(.system(size: 20, weight: .bold, design: .rounded))
+                                .foregroundColor(colorScheme == .dark ? .white : .black)
+                            
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Automatic Monitoring")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.primary)
+                                    
+                                    Text("Continuously monitors all devices every 30 seconds")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                LiquidGlassToggle(
+                                    isOn: Binding(
+                                        get: { monitoringService.isMonitoring },
+                                        set: { newValue in
+                                            if newValue {
+                                                monitoringService.startMonitoring()
+                                            } else {
+                                                monitoringService.stopMonitoring()
+                                            }
+                                        }
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Notifications View
+    
+    private var notificationsView: some View {
+        NotificationSettingsView()
+    }
+}
+
+// MARK: - Device Management Row
+
+struct DeviceManagementRow: View {
+    let device: UPSDevice
+    let monitoringService: UPSMonitoringService
+    @Binding var hoveredCard: String?
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var showingEditDevice = false
+    @State private var showingConnectivityTest = false
+    @State private var isHovered = false
+    
+    private var cardId: String { "device-mgmt-\(device.id)" }
+    private var status: UPSStatus? { monitoringService.statusData[device.id] }
+    
+    var body: some View {
+        HStack(spacing: 20) {
+            // Status indicator and device info
+            HStack(spacing: 16) {
+                // Animated status indicator
+                ZStack {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 32, height: 32)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white.opacity(0.3),
+                                            (status?.isOnline == true ? Color.green : Color.red).opacity(0.2)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                    
+                    if monitoringService.isLoading {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .scaleEffect(0.8)
+                    } else {
+                        Circle()
+                            .fill(status?.isOnline == true ? Color.green : Color.red)
+                            .frame(width: 12, height: 12)
+                            .shadow(
+                                color: (status?.isOnline == true ? Color.green : Color.red).opacity(0.6),
+                                radius: 4
+                            )
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(device.name)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
+                    
+                    HStack(spacing: 8) {
+                        Text(device.connectionType.rawValue)
+                            .font(.system(size: 11, weight: .bold))
+                            .textCase(.uppercase)
+                            .tracking(0.5)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(
+                                                LinearGradient(
+                                                    colors: [Color.blue, Color.cyan],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                ),
+                                                lineWidth: 0.8
+                                            )
+                                    )
+                            )
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.blue, Color.cyan],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                        
+                        Text("\(device.host):\(device.port.formatted(.number.grouping(.never)))")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             
             Spacer()
             
-            // Glass Status Footer
-            LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "status-footer") {
-                VStack(spacing: 8) {
-                    if monitoringService.isMonitoring {
-                        HStack(spacing: 8) {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .symbolEffect(.variableColor.iterative)
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Color.green, Color.mint],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                            
-                            Text("Monitoring Active")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    
-                    if let lastRefresh = monitoringService.lastRefreshTime {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                            
-                            Text("Updated \(lastRefresh, style: .relative)")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-        }
-        .background(Color.clear)
-    }
-    
-    private var liquidGlassDetailView: some View {
-        Group {
-            if monitoringService.devices.isEmpty {
-                LiquidGlassEmptyStateView {
-                    showingSettings = true
-                }
-            } else {
-                LiquidGlassDeviceDetailView(
-                    devices: monitoringService.devices,
-                    statusData: monitoringService.statusData,
-                    monitoringService: monitoringService,
-                    hoveredCard: $hoveredCard
-                )
-            }
-        }
-    }
-}
-
-struct LiquidGlassSidebarDeviceRow: View {
-    let device: UPSDevice
-    let status: UPSStatus?
-    let isLoading: Bool
-    @Binding var hoveredCard: String?
-    @State private var isHovered = false
-    
-    private var cardId: String { "device-row-\(device.id)" }
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Animated status indicator
-            ZStack {
-                Circle()
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 20, height: 20)
-                    .overlay(
-                        Circle()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.3),
-                                        (status?.isOnline == true ? Color.green : Color.red).opacity(0.2)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    )
-                
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .scaleEffect(0.6)
-                } else {
-                    Circle()
-                        .fill(status?.isOnline == true ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
-                        .shadow(
-                            color: (status?.isOnline == true ? Color.green : Color.red).opacity(0.6),
-                            radius: 4
-                        )
-                        .scaleEffect(isHovered ? 1.2 : 1.0)
-                }
-            }
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(device.name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
-                    .foregroundColor(.primary)
-                
-                HStack(spacing: 6) {
-                    Text(device.connectionType.rawValue)
-                        .font(.system(size: 10, weight: .medium))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule()
-                                .fill(.ultraThinMaterial)
-                                .overlay(
-                                    Capsule()
-                                        .stroke(Color.blue.opacity(0.3), lineWidth: 0.5)
-                                )
-                        )
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color.blue, Color.cyan],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .textCase(.uppercase)
-                    
-                    Text(device.host)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            
-            Spacer(minLength: 0)
-            
-            if isLoading {
-                Text("Loading...")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            } else if let status = status, status.isOnline {
-                // Only show battery percentage if it's meaningful (not 100% or 0%)
+            // Status info
+            if let status = status, status.isOnline {
                 if let batteryCharge = status.batteryCharge, batteryCharge > 0 && batteryCharge < 100 {
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: 4) {
                         Text("\(Int(batteryCharge))%")
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .font(.system(size: 16, weight: .bold, design: .monospaced))
                             .foregroundStyle(
                                 batteryCharge > 50 ? .green :
                                 batteryCharge > 20 ? .orange : .red
                             )
                         
-                        // Mini battery indicator
                         GlassProgressBar(
                             value: batteryCharge,
                             total: 100,
                             color: batteryCharge > 50 ? .green :
                                    batteryCharge > 20 ? .orange : .red
                         )
-                        .frame(width: 30, height: 3)
+                        .frame(width: 60, height: 4)
                     }
                 } else {
-                    // Show "Online" for devices at 100% or without meaningful battery data
                     Text("Online")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.green)
                         .textCase(.uppercase)
                         .tracking(0.3)
                 }
             } else {
                 Text("Offline")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.red)
                     .textCase(.uppercase)
                     .tracking(0.3)
             }
+            
+            // Action buttons
+            HStack(spacing: 8) {
+                LiquidGlassButton(
+                    "Test",
+                    icon: "network",
+                    style: .secondary
+                ) {
+                    showingConnectivityTest = true
+                }
+                
+                LiquidGlassButton(
+                    "Edit",
+                    icon: "pencil",
+                    style: .secondary
+                ) {
+                    showingEditDevice = true
+                }
+                
+                LiquidGlassButton(
+                    "",
+                    icon: "trash",
+                    style: .destructive
+                ) {
+                    monitoringService.removeDevice(device)
+                }
+            }
         }
-        .padding(12)
+        .padding(20)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 16)
                     .fill(.ultraThinMaterial)
-                    .opacity(isHovered ? 0.8 : 0.5)
+                    .opacity(isHovered ? 0.7 : 0.5)
                 
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 16)
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(isHovered ? 0.15 : 0.08),
+                                Color.white.opacity(isHovered ? 0.15 : 0.1),
                                 Color.white.opacity(0.02)
                             ],
                             startPoint: .topLeading,
@@ -409,21 +695,21 @@ struct LiquidGlassSidebarDeviceRow: View {
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 16)
                     .stroke(
                         LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.2),
-                                (status?.isOnline == true ? Color.green : Color.red).opacity(0.1)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 0.8
+                        colors: [
+                            Color.white.opacity(0.3),
+                            (status?.isOnline == true ? Color.green : Color.red).opacity(0.2)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                        lineWidth: 1
                     )
             }
         )
-        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .scaleEffect(isHovered ? 1.01 : 1.0)
         .shadow(
             color: Color.black.opacity(isHovered ? 0.1 : 0.05),
             radius: isHovered ? 8 : 4,
@@ -435,116 +721,16 @@ struct LiquidGlassSidebarDeviceRow: View {
             isHovered = hovered
             hoveredCard = hovered ? cardId : nil
         }
+        .sheet(isPresented: $showingEditDevice) {
+            MacOSEditDeviceView(device: device, monitoringService: monitoringService)
+        }
+        .sheet(isPresented: $showingConnectivityTest) {
+            MacOSConnectivityTestView(device: device)
+        }
     }
 }
 
-struct LiquidGlassEmptyStateView: View {
-    let onAddDevice: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-    @State private var hoveredCard: String? = nil
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            
-            LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "empty-main") {
-                VStack(spacing: 24) {
-                    // Animated icon
-                    ZStack {
-                        Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [
-                                        Color.blue.opacity(0.3),
-                                        Color.blue.opacity(0.1),
-                                        Color.clear
-                                    ],
-                                    center: .center,
-                                    startRadius: 20,
-                                    endRadius: 60
-                                )
-                            )
-                            .frame(width: 120, height: 120)
-                        
-                        Image(systemName: "poweroutlet.type.a")
-                            .font(.system(size: 48, weight: .light))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color.blue, Color.cyan, Color.mint],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .symbolEffect(.bounce.down, value: hoveredCard)
-                    }
-                    
-                    VStack(spacing: 12) {
-                        Text("No UPS Devices")
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [
-                                        colorScheme == .dark ? Color.white : Color.black,
-                                        Color.blue.opacity(0.8)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        Text("Add UPS devices to monitor their status, battery levels, and power metrics in real time.")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(3)
-                            .padding(.horizontal, 20)
-                    }
-                    
-                    LiquidGlassButton(
-                        "Add UPS Device",
-                        icon: "plus.circle.fill",
-                        style: .primary
-                    ) {
-                        onAddDevice()
-                    }
-                    .keyboardShortcut("n", modifiers: .command)
-                }
-            }
-            .frame(maxWidth: 400)
-            
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.clear)
-    }
-}
-
-struct LiquidGlassDeviceDetailView: View {
-    let devices: [UPSDevice]
-    let statusData: [UUID: UPSStatus]
-    let monitoringService: UPSMonitoringService
-    @Binding var hoveredCard: String?
-    
-    var body: some View {
-        ScrollView {
-            LazyVGrid(columns: [
-                GridItem(.flexible(), spacing: 20),
-                GridItem(.flexible(), spacing: 20)
-            ], spacing: 24) {
-                ForEach(devices) { device in
-                    LiquidGlassDeviceCard(
-                        device: device,
-                        status: statusData[device.id],
-                        monitoringService: monitoringService,
-                        hoveredCard: $hoveredCard
-                    )
-                }
-            }
-            .padding(24)
-        }
-        .background(Color.clear)
-    }
-}
+// MARK: - Reused Components from Original
 
 struct LiquidGlassDeviceCard: View {
     let device: UPSDevice
@@ -701,7 +887,7 @@ struct LiquidGlassDeviceCard: View {
                         HStack {
                             Text("Last updated")
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(.secondary)
                                 .textCase(.uppercase)
                                 .tracking(0.5)
                             
@@ -930,22 +1116,6 @@ extension Animation {
         return condition as? Bool == true ? self.repeatForever() : self
     }
 }
-
-// In your device detail view or main status view, add:
-// EnergyStatsView(
-//     device: device,
-//     status: status,
-//     monitoringService: monitoringService
-// )
-// 
-// // Add this somewhere in your device detail view or settings
-// 
-// Button("Debug NUT Variables") {
-//     // Present NUTDebugView
-// }
-// .sheet(isPresented: $showingNUTDebug) {
-//     NUTDebugView(device: selectedDevice)
-// }
 
 // MARK: - Supporting Types
 
