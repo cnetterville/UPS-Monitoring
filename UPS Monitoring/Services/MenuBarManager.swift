@@ -14,6 +14,7 @@ class MenuBarManager: ObservableObject {
     private var statusBarItem: NSStatusItem?
     private var popover: NSPopover?
     private weak var monitoringService: UPSMonitoringService?
+    private weak var appDelegate: AppDelegate? // Direct reference to AppDelegate
     private var cancellables = Set<AnyCancellable>()
     
     private var iconCache: [String: NSImage] = [:]
@@ -51,6 +52,11 @@ class MenuBarManager: ObservableObject {
         
         // Reset notification data when monitoring service changes
         NotificationService.shared.resetNotificationData()
+    }
+    
+    func setAppDelegate(_ delegate: AppDelegate) {
+        self.appDelegate = delegate
+        print("📋 MenuBarManager received AppDelegate reference")
     }
     
     private func updateLoginItem() {
@@ -376,16 +382,100 @@ class MenuBarManager: ObservableObject {
     
     @objc private func showApp() {
         print("🎯 MenuBarManager.showApp() called")
-        print("🔍 NSApp.delegate type: \(type(of: NSApp.delegate))")
         
-        // Call AppDelegate's showMainWindow method directly for better reliability
-        if let appDelegate = NSApp.delegate as? AppDelegate {
-            print("✅ Found AppDelegate, calling showMainWindow()")
-            appDelegate.showMainWindow()
-        } else {
-            print("❌ AppDelegate not found, falling back to WindowManager")
-            WindowManager.shared.showMainWindow()
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Try direct AppDelegate reference first
+            if let appDelegate = self.appDelegate {
+                print("✅ Using direct AppDelegate reference")
+                appDelegate.showMainWindow()
+                return
+            }
+            
+            // Try the static accessor
+            if let appDelegate = AppDelegate.shared {
+                print("✅ Found AppDelegate via static accessor")
+                appDelegate.showMainWindow()
+                return
+            }
+            
+            // Try AppDelegateReference
+            if let appDelegate = AppDelegateReference.shared {
+                print("✅ Found AppDelegate via AppDelegateReference")
+                appDelegate.showMainWindow()
+                return
+            }
+            
+            print("❌ Could not find AppDelegate anywhere, using fallback")
+            self.fallbackShowApp()
         }
+    }
+    
+    private func fallbackShowApp() {
+        print("🔄 Using fallback window management")
+        
+        // Change activation policy to regular to show windows
+        NSApp.setActivationPolicy(.regular)
+        
+        // Look for existing windows first
+        for window in NSApp.windows {
+            if self.isMainWindow(window) {
+                print("✅ Found existing main window")
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                return
+            }
+        }
+        
+        // Create new window as last resort
+        print("🆘 Creating new window as fallback")
+        self.createFallbackWindow()
+    }
+    
+    private func createFallbackWindow() {
+        let contentView = ContentView()
+        let hostingController = NSHostingController(rootView: contentView)
+        
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 650),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.title = "UPS Monitoring"
+        window.contentViewController = hostingController
+        window.center()
+        
+        // Set up window delegate to return to accessory mode when closed
+        let windowDelegate = FallbackWindowDelegate()
+        window.delegate = windowDelegate
+        
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        
+        print("✅ Fallback window created and shown")
+    }
+    
+    private func isMainWindow(_ window: NSWindow) -> Bool {
+        // Filter out system windows that can't become key
+        guard window.contentView != nil else { return false }
+        guard window.canBecomeKey else { return false }
+        
+        // Exclude status bar windows by checking class name
+        let className = NSStringFromClass(type(of: window))
+        guard !className.contains("StatusBar") else { return false }
+        guard !className.contains("MenuBar") else { return false }
+        guard !className.contains("Popover") else { return false }
+        
+        // Check if this looks like our main window
+        let hasContent = window.contentViewController != nil
+        let isResizable = window.styleMask.contains(.resizable)
+        let isTitled = window.styleMask.contains(.titled)
+        let rightSize = window.frame.size.width > 500 && window.frame.size.height > 400
+        
+        return hasContent && isResizable && isTitled && rightSize
     }
     
     @objc private func toggleLaunchAtLogin() {
@@ -409,5 +499,16 @@ class MenuBarManager: ObservableObject {
         case warning
         case critical
         case offline
+    }
+}
+
+// MARK: - Fallback Window Delegate
+private class FallbackWindowDelegate: NSObject, NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        // When window closes, return to accessory mode
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
+            print("🔧 Fallback window closed, returned to accessory mode")
+        }
     }
 }
