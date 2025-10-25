@@ -10,9 +10,12 @@ import UserNotifications
 
 struct NotificationSettingsView: View {
     @StateObject private var notificationService = NotificationService.shared
+    @StateObject private var mailjetService = MailjetService.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingSystemPreferences = false
     @State private var hoveredCard: String? = nil
+    @State private var showingAddRecipient = false
+    @State private var showingMailjetConfig = false
     
     private var enabledNotificationCount: Int {
         var count = 0
@@ -21,6 +24,14 @@ struct NotificationSettingsView: View {
         if notificationService.notifyOnDeviceOffline { count += 1 }
         if notificationService.notifyOnCriticalAlarms { count += 1 }
         if notificationService.notifyOnLowBattery { count += 1 }
+        return count
+    }
+    
+    private var enabledEmailAlertCount: Int {
+        var count = 0
+        if notificationService.emailOnCritical { count += 1 }
+        if notificationService.emailOnWarning { count += 1 }
+        if notificationService.emailOnMaintenance { count += 1 }
         return count
     }
     
@@ -44,10 +55,29 @@ struct NotificationSettingsView: View {
                         if notificationService.notificationsEnabled {
                             // Notification preferences with glass cards
                             notificationTypesSection
-                            
-                            // Test section with glass effect
-                            testSection
                         }
+                    }
+                    
+                    // Email Notifications Section
+                    emailNotificationsSection
+                    
+                    if notificationService.emailNotificationsEnabled {
+                        // Mailjet Configuration
+                        mailjetConfigurationSection
+                        
+                        // Email Recipients
+                        emailRecipientsSection
+                        
+                        // Email Alert Types
+                        emailAlertTypesSection
+                        
+                        // Email Reports
+                        emailReportsSection
+                    }
+                    
+                    // Test sections
+                    if notificationService.notificationsEnabled || notificationService.emailNotificationsEnabled {
+                        testSection
                     }
                     
                     Spacer(minLength: 20)
@@ -55,7 +85,13 @@ struct NotificationSettingsView: View {
                 .padding(24)
             }
         }
-        .frame(maxWidth: 600)
+        .frame(maxWidth: 800) // Increased for email settings
+        .sheet(isPresented: $showingAddRecipient) {
+            AddEmailRecipientView(mailjetService: mailjetService)
+        }
+        .sheet(isPresented: $showingMailjetConfig) {
+            MailjetConfigurationView(mailjetService: mailjetService)
+        }
     }
     
     @ViewBuilder
@@ -271,24 +307,386 @@ struct NotificationSettingsView: View {
         }
     }
     
+    // MARK: - Email Notifications Section
+    
+    @ViewBuilder
+    private var emailNotificationsSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "email-notifications") {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.blue.opacity(0.4),
+                                        Color.cyan.opacity(0.2),
+                                        Color.clear
+                                    ],
+                                    center: .center,
+                                    startRadius: 10,
+                                    endRadius: 30
+                                )
+                            )
+                            .frame(width: 50, height: 50)
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.3),
+                                                Color.blue.opacity(0.2)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                            )
+                        
+                        Image(systemName: "envelope")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.blue, Color.cyan],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .symbolEffect(.bounce.up, value: hoveredCard == "email-notifications")
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Email Notifications")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(colorScheme == .dark ? .white : .black)
+                        
+                        Text("Send critical alerts and reports via email")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    LiquidGlassToggle(isOn: $notificationService.emailNotificationsEnabled)
+                }
+                
+                if !mailjetService.isConfigured && notificationService.emailNotificationsEnabled {
+                    VStack(spacing: 12) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            
+                            Text("Email service not configured")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.orange)
+                            
+                            Spacer()
+                        }
+                        
+                        LiquidGlassButton(
+                            "Configure Mailjet",
+                            icon: "gear",
+                            style: .primary
+                        ) {
+                            showingMailjetConfig = true
+                        }
+                    }
+                    .padding(.top, 8)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var mailjetConfigurationSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "mailjet-config") {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Email Service Configuration")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(mailjetService.isConfigured ? .green : .red)
+                            .frame(width: 8, height: 8)
+                        
+                        Text(mailjetService.isConfigured ? "Configured" : "Not Configured")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(mailjetService.isConfigured ? .green : .red)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
+                    }
+                }
+                
+                VStack(spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("API Configuration")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                            
+                            Text("Mailjet API key, secret, and sender details")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        LiquidGlassButton(
+                            "Configure",
+                            icon: "gear",
+                            style: .secondary
+                        ) {
+                            showingMailjetConfig = true
+                        }
+                    }
+                    
+                    if mailjetService.isConfigured {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("From:")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                
+                                Text("\(mailjetService.fromName) <\(mailjetService.fromEmail)>")
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundColor(.primary)
+                                
+                                Spacer()
+                            }
+                            
+                            HStack {
+                                Text("Recipients:")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                
+                                Text("\(mailjetService.recipients.count) configured")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.blue)
+                                
+                                Spacer()
+                            }
+                        }
+                        .padding(12)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var emailRecipientsSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "email-recipients") {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Email Recipients")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
+                    
+                    Spacer()
+                    
+                    Text("\(mailjetService.recipients.count) recipients")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                                )
+                        )
+                }
+                
+                if mailjetService.recipients.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "person.2.slash")
+                            .font(.system(size: 24, weight: .light))
+                            .foregroundStyle(.secondary)
+                        
+                        Text("No recipients configured")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.secondary)
+                        
+                        Text("Add email recipients to receive UPS alerts")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: .infinity)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(mailjetService.recipients) { recipient in
+                            EmailRecipientRow(
+                                recipient: recipient,
+                                mailjetService: mailjetService,
+                                hoveredCard: $hoveredCard
+                            )
+                        }
+                    }
+                }
+                
+                LiquidGlassButton(
+                    "Add Recipient",
+                    icon: "plus.circle.fill",
+                    style: .primary
+                ) {
+                    showingAddRecipient = true
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var emailAlertTypesSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "email-alert-types") {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text("Email Alert Types")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
+                    
+                    Spacer()
+                    
+                    Text("\(enabledEmailAlertCount) enabled")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                                )
+                        )
+                }
+                
+                VStack(spacing: 16) {
+                    EmailAlertToggleRow(
+                        icon: "exclamationmark.triangle.fill",
+                        title: "Critical Alerts",
+                        description: "Device offline, power failures, battery depleted",
+                        isOn: $notificationService.emailOnCritical,
+                        accentColor: .red
+                    )
+                    
+                    EmailAlertToggleRow(
+                        icon: "exclamationmark.circle.fill",
+                        title: "Warning Alerts",
+                        description: "High temperature, high load, battery aging",
+                        isOn: $notificationService.emailOnWarning,
+                        accentColor: .orange
+                    )
+                    
+                    EmailAlertToggleRow(
+                        icon: "wrench.and.screwdriver.fill",
+                        title: "Maintenance Alerts",
+                        description: "Battery replacement, scheduled maintenance",
+                        isOn: $notificationService.emailOnMaintenance,
+                        accentColor: .blue
+                    )
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var emailReportsSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "email-reports") {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 16) {
+                    Image(systemName: "chart.bar.doc.horizontal")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.green, Color.mint],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Status Reports")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(colorScheme == .dark ? .white : .black)
+                        
+                        Text("Automated email reports with UPS status summaries")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                VStack(spacing: 16) {
+                    EmailReportToggleRow(
+                        title: "Daily Reports",
+                        description: "Daily status summary at 8:00 AM",
+                        isOn: $notificationService.emailDailyReports
+                    )
+                    
+                    EmailReportToggleRow(
+                        title: "Weekly Reports",
+                        description: "Weekly summary every Monday morning",
+                        isOn: $notificationService.emailWeeklyReports
+                    )
+                    
+                    EmailReportToggleRow(
+                        title: "Monthly Reports",
+                        description: "Monthly summary on the 1st of each month",
+                        isOn: $notificationService.emailMonthlyReports
+                    )
+                }
+            }
+        }
+    }
+    
     @ViewBuilder
     private var testSection: some View {
         LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "test-section") {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 16) {
                 Text("Test Notifications")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(colorScheme == .dark ? .white : .black)
                 
-                Text("Send a test notification to verify your settings are working correctly.")
+                Text("Send test notifications to verify your settings are working correctly.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                 
-                LiquidGlassButton(
-                    "Send Test Notification",
-                    icon: "paperplane.fill",
-                    style: .primary
-                ) {
-                    notificationService.testNotification()
+                HStack(spacing: 12) {
+                    if notificationService.notificationsEnabled {
+                        LiquidGlassButton(
+                            "Test Local",
+                            icon: "bell.fill",
+                            style: .secondary
+                        ) {
+                            notificationService.testNotification()
+                        }
+                    }
+                    
+                    if notificationService.emailNotificationsEnabled && mailjetService.isConfigured {
+                        LiquidGlassButton(
+                            "Test Email",
+                            icon: "envelope.fill",
+                            style: .primary
+                        ) {
+                            notificationService.testEmailNotification()
+                        }
+                    }
+                    
+                    Spacer()
                 }
             }
         }
@@ -539,6 +937,179 @@ struct NotificationToggleRow: View {
         .scaleEffect(isHovered ? 1.01 : 1.0)
         .shadow(
             color: accentColor.opacity(isOn && isHovered ? 0.2 : 0.1),
+            radius: isHovered ? 8 : 4,
+            x: 0,
+            y: isHovered ? 4 : 2
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isOn)
+        .onHover { hovered in
+            isHovered = hovered
+        }
+    }
+}
+
+// MARK: - Email Alert Toggle Row
+
+struct EmailAlertToggleRow: View {
+    let icon: String
+    let title: String
+    let description: String
+    @Binding var isOn: Bool
+    let accentColor: Color
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // Glass icon container
+            ZStack {
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        accentColor.opacity(isOn ? 0.3 : 0.1),
+                                        accentColor.opacity(isOn ? 0.1 : 0.05)
+                                    ],
+                                    center: .center,
+                                    startRadius: 5,
+                                    endRadius: 20
+                                )
+                            )
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.3),
+                                        accentColor.opacity(isOn ? 0.4 : 0.2)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+                    .frame(width: 36, height: 36)
+                
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                accentColor,
+                                accentColor.opacity(0.8)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .scaleEffect(isHovered ? 1.1 : 1.0)
+                    .symbolEffect(.bounce, value: isOn)
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(colorScheme == .dark ? .white : .black)
+                
+                Text(description)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+            
+            Spacer()
+            
+            LiquidGlassToggle(isOn: $isOn)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .opacity(isHovered ? 0.6 : 0.4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.2),
+                                    accentColor.opacity(isOn ? 0.3 : 0.1)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.8
+                        )
+                )
+        )
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .shadow(
+            color: accentColor.opacity(isOn && isHovered ? 0.2 : 0.1),
+            radius: isHovered ? 8 : 4,
+            x: 0,
+            y: isHovered ? 4 : 2
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isOn)
+        .onHover { hovered in
+            isHovered = hovered
+        }
+    }
+}
+
+// MARK: - Email Report Toggle Row
+
+struct EmailReportToggleRow: View {
+    let title: String
+    let description: String
+    @Binding var isOn: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(colorScheme == .dark ? .white : .black)
+                
+                Text(description)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            LiquidGlassToggle(isOn: $isOn)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.ultraThinMaterial)
+                .opacity(isHovered ? 0.5 : 0.3)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.2),
+                                    Color.green
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.8
+                        )
+                )
+        )
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .shadow(
+            color: Color.green.opacity(isOn && isHovered ? 0.2 : 0.1),
             radius: isHovered ? 8 : 4,
             x: 0,
             y: isHovered ? 4 : 2

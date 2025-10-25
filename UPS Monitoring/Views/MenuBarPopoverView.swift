@@ -12,7 +12,6 @@ struct MenuBarPopoverView: View {
     @ObservedObject var monitoringService: UPSMonitoringService
     @State private var hoveredCard: String? = nil
     let onShowApp: () -> Void
-    let onShowSettings: () -> Void
     let onQuit: () -> Void
     
     var body: some View {
@@ -223,21 +222,13 @@ struct MenuBarPopoverView: View {
     private var footerSection: some View {
         VStack(spacing: 12) {
             // Action buttons
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 LiquidGlassButton(
                     "Show App",
                     icon: "app.dashed",
                     style: .primary
                 ) {
                     onShowApp()
-                }
-                
-                LiquidGlassButton(
-                    "Settings",
-                    icon: "gearshape",
-                    style: .secondary
-                ) {
-                    onShowSettings()
                 }
                 
                 LiquidGlassButton(
@@ -476,7 +467,6 @@ struct MenuBarPopoverView_Previews: PreviewProvider {
         MenuBarPopoverView(
             monitoringService: mockService,
             onShowApp: { print("Show app") },
-            onShowSettings: { print("Show settings") },
             onQuit: { print("Quit") }
         )
         .preferredColorScheme(.dark)

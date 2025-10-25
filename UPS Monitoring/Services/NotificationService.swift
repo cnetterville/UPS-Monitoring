@@ -1,6 +1,6 @@
 //
 //  NotificationService.swift
-//  UPS Monitoring
+//  UPSMonitoring
 //
 //  Created by Curtis Netterville on 9/17/25.
 //
@@ -14,38 +14,80 @@ import AppKit
 class NotificationService: NSObject, ObservableObject {
     static let shared = NotificationService()
     
-    // Notification preferences
+    // Existing notification preferences
     @Published var notificationsEnabled: Bool {
         didSet {
             UserDefaults.standard.set(notificationsEnabled, forKey: "NotificationsEnabled")
             if !notificationsEnabled {
                 removeAllPendingNotifications()
             }
+            saveEmailSettings()
         }
     }
     
     @Published var notifyOnBattery: Bool {
-        didSet { UserDefaults.standard.set(notifyOnBattery, forKey: "NotifyOnBattery") }
+        didSet { 
+            UserDefaults.standard.set(notifyOnBattery, forKey: "NotifyOnBattery")
+            saveEmailSettings()
+        }
     }
     
     @Published var notifyOnPowerRestored: Bool {
-        didSet { UserDefaults.standard.set(notifyOnPowerRestored, forKey: "NotifyOnPowerRestored") }
+        didSet { 
+            UserDefaults.standard.set(notifyOnPowerRestored, forKey: "NotifyOnPowerRestored")
+            saveEmailSettings()
+        }
     }
     
     @Published var notifyOnLowBattery: Bool {
-        didSet { UserDefaults.standard.set(notifyOnLowBattery, forKey: "NotifyOnLowBattery") }
+        didSet { 
+            UserDefaults.standard.set(notifyOnLowBattery, forKey: "NotifyOnLowBattery")
+            saveEmailSettings()
+        }
     }
     
     @Published var notifyOnDeviceOffline: Bool {
-        didSet { UserDefaults.standard.set(notifyOnDeviceOffline, forKey: "NotifyOnDeviceOffline") }
+        didSet { 
+            UserDefaults.standard.set(notifyOnDeviceOffline, forKey: "NotifyOnDeviceOffline")
+            saveEmailSettings()
+        }
     }
     
     @Published var notifyOnCriticalAlarms: Bool {
-        didSet { UserDefaults.standard.set(notifyOnCriticalAlarms, forKey: "NotifyOnCriticalAlarms") }
+        didSet { 
+            UserDefaults.standard.set(notifyOnCriticalAlarms, forKey: "NotifyOnCriticalAlarms")
+            saveEmailSettings()
+        }
     }
     
     @Published var lowBatteryThreshold: Double {
-        didSet { UserDefaults.standard.set(lowBatteryThreshold, forKey: "LowBatteryThreshold") }
+        didSet { 
+            UserDefaults.standard.set(lowBatteryThreshold, forKey: "LowBatteryThreshold")
+            saveEmailSettings()
+        }
+    }
+    
+    // Email notification settings
+    @Published var emailNotificationsEnabled = false {
+        didSet { saveEmailSettings() }
+    }
+    @Published var emailOnCritical = true {
+        didSet { saveEmailSettings() }
+    }
+    @Published var emailOnWarning = true {
+        didSet { saveEmailSettings() }
+    }
+    @Published var emailOnMaintenance = true {
+        didSet { saveEmailSettings() }
+    }
+    @Published var emailDailyReports = false {
+        didSet { saveEmailSettings() }
+    }
+    @Published var emailWeeklyReports = true {
+        didSet { saveEmailSettings() }
+    }
+    @Published var emailMonthlyReports = false {
+        didSet { saveEmailSettings() }
     }
     
     @Published var notificationPermissionStatus: UNAuthorizationStatus = .notDetermined
@@ -68,6 +110,8 @@ class NotificationService: NSObject, ObservableObject {
     
     private var cancellables = Set<AnyCancellable>()
     
+    private let mailjetService = MailjetService.shared
+    
     private override init() {
         // Load preferences from UserDefaults
         self.notificationsEnabled = UserDefaults.standard.object(forKey: "NotificationsEnabled") as? Bool ?? true
@@ -80,10 +124,38 @@ class NotificationService: NSObject, ObservableObject {
         
         super.init()
         
+        loadEmailSettings()
         requestNotificationPermission()
-        updatePermissionStatus()
     }
     
+    // MARK: - Email Settings Management
+    
+    private func saveEmailSettings() {
+        let settings: [String: Any] = [
+            "emailNotificationsEnabled": emailNotificationsEnabled,
+            "emailOnCritical": emailOnCritical,
+            "emailOnWarning": emailOnWarning,
+            "emailOnMaintenance": emailOnMaintenance,
+            "emailDailyReports": emailDailyReports,
+            "emailWeeklyReports": emailWeeklyReports,
+            "emailMonthlyReports": emailMonthlyReports
+        ]
+        
+        UserDefaults.standard.set(settings, forKey: "emailNotificationSettings")
+    }
+    
+    private func loadEmailSettings() {
+        guard let settings = UserDefaults.standard.dictionary(forKey: "emailNotificationSettings") else { return }
+        
+        emailNotificationsEnabled = settings["emailNotificationsEnabled"] as? Bool ?? false
+        emailOnCritical = settings["emailOnCritical"] as? Bool ?? true
+        emailOnWarning = settings["emailOnWarning"] as? Bool ?? true
+        emailOnMaintenance = settings["emailOnMaintenance"] as? Bool ?? true
+        emailDailyReports = settings["emailDailyReports"] as? Bool ?? false
+        emailWeeklyReports = settings["emailWeeklyReports"] as? Bool ?? true
+        emailMonthlyReports = settings["emailMonthlyReports"] as? Bool ?? false
+    }
+
     func initialize(with monitoringService: UPSMonitoringService) {
         // Observe status changes
         monitoringService.$statusData
@@ -136,8 +208,24 @@ class NotificationService: NSObject, ObservableObject {
                 if let prevSource = previous.outputSource, let currentSource = statusToCompare.outputSource {
                     if prevSource != "Battery" && currentSource == "Battery" && notifyOnBattery {
                         sendOnBatteryNotification(device: device, status: statusToCompare)
+                        
+                        // Email notification for power failure
+                        if emailNotificationsEnabled && emailOnCritical {
+                            let emailMessage = EmailTemplateService.createCriticalAlert(
+                                device: device,
+                                status: statusToCompare,
+                                alertType: .powerFailure,
+                                additionalInfo: "The UPS switched to battery power at \(Date().formatted()). Estimated runtime: \(statusToCompare.formattedRuntime ?? "Unknown")"
+                            )
+                            mailjetService.queueEmail(emailMessage)
+                        }
                     } else if prevSource == "Battery" && currentSource != "Battery" && notifyOnPowerRestored {
                         sendPowerRestoredNotification(device: device, status: statusToCompare)
+                        
+                        // Email notification for power restored
+                        if emailNotificationsEnabled && emailOnWarning {
+                            sendPowerRestoredEmail(device: device, status: statusToCompare)
+                        }
                     }
                 }
                 
@@ -149,6 +237,51 @@ class NotificationService: NSObject, ObservableObject {
                     // Send notification if we just crossed the threshold (going down)
                     if prevCharge > lowBatteryThreshold && currentCharge <= lowBatteryThreshold {
                         sendLowBatteryNotification(device: device, status: statusToCompare)
+                        
+                        // Email notification for low battery
+                        if emailNotificationsEnabled && emailOnCritical {
+                            let emailMessage = EmailTemplateService.createCriticalAlert(
+                                device: device,
+                                status: statusToCompare,
+                                alertType: .batteryLow(threshold: lowBatteryThreshold),
+                                additionalInfo: "Battery level dropped to \(Int(currentCharge))% at \(Date().formatted()). Consider immediate action to prevent data loss."
+                            )
+                            mailjetService.queueEmail(emailMessage)
+                        }
+                    }
+                }
+                
+                // Check for high temperature
+                if let prevTemp = previous.temperature,
+                   let currentTemp = statusToCompare.temperature {
+                    if prevTemp <= 35.0 && currentTemp > 35.0 {
+                        if emailNotificationsEnabled && emailOnWarning {
+                            let emailMessage = EmailTemplateService.createWarningAlert(
+                                device: device,
+                                status: statusToCompare,
+                                alertType: .highTemperature(temp: currentTemp),
+                                value: "\(Int(currentTemp))°C",
+                                threshold: "Normal range: 20-35°C"
+                            )
+                            mailjetService.queueEmail(emailMessage)
+                        }
+                    }
+                }
+                
+                // Check for high load
+                if let prevLoad = previous.load,
+                   let currentLoad = statusToCompare.load {
+                    if prevLoad <= 80.0 && currentLoad > 80.0 {
+                        if emailNotificationsEnabled && emailOnWarning {
+                            let emailMessage = EmailTemplateService.createWarningAlert(
+                                device: device,
+                                status: statusToCompare,
+                                alertType: .highLoad(load: currentLoad),
+                                value: "\(Int(currentLoad))%",
+                                threshold: "Recommended maximum: 80%"
+                            )
+                            mailjetService.queueEmail(emailMessage)
+                        }
                     }
                 }
                 
@@ -159,6 +292,17 @@ class NotificationService: NSObject, ObservableObject {
                     
                     if prevAlarms == 0 && currentAlarms > 0 {
                         sendCriticalAlarmNotification(device: device, status: statusToCompare)
+                        
+                        // Email notification for critical alarms
+                        if emailNotificationsEnabled && emailOnCritical {
+                            let emailMessage = EmailTemplateService.createCriticalAlert(
+                                device: device,
+                                status: statusToCompare,
+                                alertType: .criticalAlarm,
+                                additionalInfo: "The UPS has reported \(currentAlarms) active alarm(s) at \(Date().formatted()). Professional service may be required."
+                            )
+                            mailjetService.queueEmail(emailMessage)
+                        }
                     }
                 }
                 
@@ -179,6 +323,28 @@ class NotificationService: NSObject, ObservableObject {
                     if let alarms = statusToCompare.alarmsPresent,
                        alarms > 0 && notifyOnCriticalAlarms {
                         sendCriticalAlarmNotification(device: device, status: statusToCompare)
+                    }
+                }
+            }
+            
+            // Check for battery aging (maintenance alert)
+            if emailNotificationsEnabled && emailOnMaintenance,
+               let batteryAge = device.batteryAgeInDays {
+                let ageInYears = batteryAge / 365
+                if ageInYears >= 3 {
+                    // Only send this once per month to avoid spam
+                    let lastSent = UserDefaults.standard.object(forKey: "lastBatteryAgingAlert_\(device.id)") as? Date
+                    let thirtyDaysAgo = Date().addingTimeInterval(-30 * 24 * 3600)
+                    
+                    if lastSent == nil || lastSent! < thirtyDaysAgo {
+                        let emailMessage = EmailTemplateService.createMaintenanceAlert(
+                            device: device,
+                            alertType: .batteryReplacement(age: ageInYears),
+                            details: "The battery was installed on \(device.batteryInstallDate?.formatted(date: .long, time: .omitted) ?? "Unknown date") and is now \(ageInYears) years old. Consider scheduling a replacement to ensure continued reliable operation."
+                        )
+                        mailjetService.queueEmail(emailMessage)
+                        
+                        UserDefaults.standard.set(Date(), forKey: "lastBatteryAgingAlert_\(device.id)")
                     }
                 }
             }
@@ -255,12 +421,112 @@ class NotificationService: NSObject, ObservableObject {
                         // Send offline notification
                         self.sendDeviceOfflineNotification(device: device)
                         
+                        // Email notification for device offline
+                        if self.emailNotificationsEnabled && self.emailOnCritical {
+                            let emailMessage = EmailTemplateService.createCriticalAlert(
+                                device: device,
+                                status: nil,
+                                alertType: .deviceOffline,
+                                additionalInfo: "The device stopped responding at \(Date().formatted()). Please check network connectivity and device status."
+                            )
+                            self.mailjetService.queueEmail(emailMessage)
+                        }
+                        
                         // Clean up timer
                         self.deviceOfflineTimers.removeValue(forKey: deviceId)
                     }
                 }
             }
         }
+    }
+    
+    private func sendPowerRestoredEmail(device: UPSDevice, status: UPSStatus) {
+        let customMessage = EmailMessage(
+            alertType: .warning,
+            subject: "✅ Power Restored - \(device.name)",
+            textContent: """
+            POWER RESTORED NOTIFICATION
+            
+            Device: \(device.name)
+            Time: \(Date().formatted())
+            
+            The UPS has returned to line power operation after running on battery.
+            
+            Current Status:
+            - Battery Level: \(Int(status.batteryCharge ?? 0))%
+            - Status: \(status.isOnline ? "Online" : "Offline")
+            
+            System is now operating normally.
+            
+            ---
+            UPS Monitoring System
+            """,
+            htmlContent: """
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <div style="background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 20px; text-align: center; border-radius: 8px;">
+                        <h1 style="margin: 0; font-size: 24px;">✅ Power Restored</h1>
+                        <p style="margin: 10px 0 0 0; opacity: 0.9;">\(device.name)</p>
+                    </div>
+                    
+                    <div style="padding: 20px; border: 2px solid #4CAF50; border-radius: 8px; margin-top: 20px;">
+                        <h2 style="color: #4CAF50; margin: 0 0 15px 0;">System Status: Normal</h2>
+                        <p>The UPS has returned to line power operation after running on battery.</p>
+                        <ul>
+                            <li>Battery Level: <strong>\(Int(status.batteryCharge ?? 0))%</strong></li>
+                            <li>Status: <strong>\(status.isOnline ? "Online" : "Offline")</strong></li>
+                            <li>Restored at: <strong>\(Date().formatted())</strong></li>
+                        </ul>
+                    </div>
+                    
+                    <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
+                        <p style="color: #666; font-size: 14px;">UPS Monitoring System</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """,
+            deviceName: device.name,
+            deviceData: nil
+        )
+        mailjetService.queueEmail(customMessage)
+    }
+    
+    // MARK: - Report Generation
+    
+    func sendDailyReport(_ devices: [UPSDevice], statusData: [UUID: UPSStatus]) {
+        guard emailNotificationsEnabled && emailDailyReports else { return }
+        
+        let reportMessage = EmailTemplateService.createStatusReport(
+            devices: devices,
+            statusData: statusData,
+            reportType: .daily
+        )
+        mailjetService.queueEmail(reportMessage)
+    }
+    
+    func sendWeeklyReport(_ devices: [UPSDevice], statusData: [UUID: UPSStatus]) {
+        guard emailNotificationsEnabled && emailWeeklyReports else { return }
+        
+        let reportMessage = EmailTemplateService.createStatusReport(
+            devices: devices,
+            statusData: statusData,
+            reportType: .weekly
+        )
+        mailjetService.queueEmail(reportMessage)
+    }
+    
+    func sendMonthlyReport(_ devices: [UPSDevice], statusData: [UUID: UPSStatus]) {
+        guard emailNotificationsEnabled && emailMonthlyReports else { return }
+        
+        let reportMessage = EmailTemplateService.createStatusReport(
+            devices: devices,
+            statusData: statusData,
+            reportType: .monthly
+        )
+        mailjetService.queueEmail(reportMessage)
     }
     
     // MARK: - Notification Methods
@@ -392,6 +658,25 @@ class NotificationService: NSObject, ObservableObject {
         content.sound = .default
         
         sendNotification(identifier: "test_notification", content: content)
+    }
+    
+    func testEmailNotification() {
+        Task {
+            do {
+                try await mailjetService.sendTestEmail()
+                let content = UNMutableNotificationContent()
+                content.title = "Test Email Sent"
+                content.body = "Check your email for the test message"
+                content.sound = .default
+                sendNotification(identifier: "test_email_notification", content: content)
+            } catch {
+                let content = UNMutableNotificationContent()
+                content.title = "Email Test Failed"
+                content.body = error.localizedDescription
+                content.sound = .default
+                sendNotification(identifier: "test_email_failed", content: content)
+            }
+        }
     }
     
     func openSystemPreferences() {

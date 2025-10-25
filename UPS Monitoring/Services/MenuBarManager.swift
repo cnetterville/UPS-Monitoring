@@ -145,10 +145,6 @@ class MenuBarManager: ObservableObject {
                 self?.popover?.performClose(nil)
                 self?.showApp()
             },
-            onShowSettings: { [weak self] in
-                self?.popover?.performClose(nil)
-                self?.showSettings()
-            },
             onQuit: { [weak self] in
                 self?.popover?.performClose(nil)
                 self?.quitApp()
@@ -379,7 +375,17 @@ class MenuBarManager: ObservableObject {
     }
     
     @objc private func showApp() {
-        WindowManager.shared.showMainWindow()
+        print("🎯 MenuBarManager.showApp() called")
+        print("🔍 NSApp.delegate type: \(type(of: NSApp.delegate))")
+        
+        // Call AppDelegate's showMainWindow method directly for better reliability
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            print("✅ Found AppDelegate, calling showMainWindow()")
+            appDelegate.showMainWindow()
+        } else {
+            print("❌ AppDelegate not found, falling back to WindowManager")
+            WindowManager.shared.showMainWindow()
+        }
     }
     
     @objc private func toggleLaunchAtLogin() {
