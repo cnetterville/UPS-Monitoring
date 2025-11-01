@@ -127,7 +127,7 @@ class NotificationService: NSObject, ObservableObject {
         loadEmailSettings()
         requestNotificationPermission()
     }
-    
+
     // MARK: - Email Settings Management
     
     private func saveEmailSettings() {
@@ -157,6 +157,11 @@ class NotificationService: NSObject, ObservableObject {
     }
 
     func initialize(with monitoringService: UPSMonitoringService) {
+        // Initialize the report scheduler with monitoring service after both services are ready
+        Task { @MainActor in
+            ReportSchedulerService.shared.initialize(with: monitoringService)
+        }
+        
         // Observe status changes
         monitoringService.$statusData
             .receive(on: DispatchQueue.main)

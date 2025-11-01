@@ -55,6 +55,9 @@ struct ContentView: View {
             // Set up menu bar manager with monitoring service
             MenuBarManager.shared.setMonitoringService(monitoringService)
             
+            // Initialize notification service with monitoring service
+            NotificationService.shared.initialize(with: monitoringService)
+            
             // Only start monitoring and refresh if we have devices
             if !monitoringService.devices.isEmpty {
                 // Start monitoring first (this will trigger initial refresh)

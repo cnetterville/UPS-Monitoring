@@ -649,6 +649,89 @@ struct NotificationSettingsView: View {
                         isOn: $notificationService.emailMonthlyReports
                     )
                 }
+                
+                // Next scheduled reports info
+                if notificationService.emailNotificationsEnabled && 
+                   (notificationService.emailDailyReports || notificationService.emailWeeklyReports || notificationService.emailMonthlyReports) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Next Scheduled Reports")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
+                        
+                        let nextReportTimes = ReportSchedulerService.shared.getNextReportTimes()
+                        
+                        VStack(spacing: 8) {
+                            if notificationService.emailDailyReports, let nextDaily = nextReportTimes.daily {
+                                HStack {
+                                    Image(systemName: "calendar")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.green)
+                                        .frame(width: 16)
+                                    
+                                    Text("Daily:")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.primary)
+                                    
+                                    Spacer()
+                                    
+                                    Text(nextDaily, style: .relative)
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            
+                            if notificationService.emailWeeklyReports, let nextWeekly = nextReportTimes.weekly {
+                                HStack {
+                                    Image(systemName: "calendar.badge.plus")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.blue)
+                                        .frame(width: 16)
+                                    
+                                    Text("Weekly:")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.primary)
+                                    
+                                    Spacer()
+                                    
+                                    Text(nextWeekly, style: .relative)
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            
+                            if notificationService.emailMonthlyReports, let nextMonthly = nextReportTimes.monthly {
+                                HStack {
+                                    Image(systemName: "calendar.circle")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.purple)
+                                        .frame(width: 16)
+                                    
+                                    Text("Monthly:")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.primary)
+                                    
+                                    Spacer()
+                                    
+                                    Text(nextMonthly, style: .relative)
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.3)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                            )
+                    )
+                }
             }
         }
     }
@@ -665,28 +748,71 @@ struct NotificationSettingsView: View {
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                 
-                HStack(spacing: 12) {
-                    if notificationService.notificationsEnabled {
-                        LiquidGlassButton(
-                            "Test Local",
-                            icon: "bell.fill",
-                            style: .secondary
-                        ) {
-                            notificationService.testNotification()
+                VStack(spacing: 12) {
+                    // Local and Email Alert Tests
+                    HStack(spacing: 12) {
+                        if notificationService.notificationsEnabled {
+                            LiquidGlassButton(
+                                "Test Local",
+                                icon: "bell.fill",
+                                style: .secondary
+                            ) {
+                                notificationService.testNotification()
+                            }
                         }
+                        
+                        if notificationService.emailNotificationsEnabled && mailjetService.isConfigured {
+                            LiquidGlassButton(
+                                "Test Email",
+                                icon: "envelope.fill",
+                                style: .primary
+                            ) {
+                                notificationService.testEmailNotification()
+                            }
+                        }
+                        
+                        Spacer()
                     }
                     
+                    // Email Report Tests
                     if notificationService.emailNotificationsEnabled && mailjetService.isConfigured {
-                        LiquidGlassButton(
-                            "Test Email",
-                            icon: "envelope.fill",
-                            style: .primary
-                        ) {
-                            notificationService.testEmailNotification()
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Test Reports")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .textCase(.uppercase)
+                                .tracking(0.5)
+                            
+                            HStack(spacing: 8) {
+                                LiquidGlassButton(
+                                    "Daily",
+                                    icon: "calendar",
+                                    style: .secondary
+                                ) {
+                                    ReportSchedulerService.shared.sendTestDailyReport()
+                                }
+                                
+                                LiquidGlassButton(
+                                    "Weekly",
+                                    icon: "calendar.badge.plus",
+                                    style: .secondary
+                                ) {
+                                    ReportSchedulerService.shared.sendTestWeeklyReport()
+                                }
+                                
+                                LiquidGlassButton(
+                                    "Monthly",
+                                    icon: "calendar.circle",
+                                    style: .secondary
+                                ) {
+                                    ReportSchedulerService.shared.sendTestMonthlyReport()
+                                }
+                                
+                                Spacer()
+                            }
                         }
+                        .padding(.top, 8)
                     }
-                    
-                    Spacer()
                 }
             }
         }
