@@ -211,11 +211,15 @@ class DataPersistenceService {
         // Update power and energy data
         if let power = status.outputPower {
             stats.totalPowerSamples += 1
-            stats.totalPowerWh += power / 60.0 // Assuming samples every minute, convert to Wh
+            
+            let timeIntervalHours = 1.0 / 60.0 // Assuming samples every minute = 1/60 hours
+            let powerKW = power / 1000.0 // Convert watts to kilowatts
+            let energyKWh = powerKW * timeIntervalHours // kW × hours = kWh
+            stats.totalPowerWh += energyKWh * 1000.0 // Convert back to Wh for storage consistency
             
             stats.peakPowerW = max(stats.peakPowerW, power)
             stats.minPowerW = stats.minPowerW == 0 ? power : min(stats.minPowerW, power)
-            stats.averagePowerW = stats.totalPowerWh / Double(stats.totalPowerSamples)
+            stats.averagePowerW = (stats.totalPowerWh / 1000.0) / (Double(stats.totalPowerSamples) / 60.0) // Total kWh / total hours
         }
         
         // Update load data
@@ -316,11 +320,12 @@ class DataPersistenceService {
         let averageEfficiency: Double = 92.5 // Default efficiency
         
         if !samples.isEmpty {
-            // Calculate energy consumption (trapezoid rule)
             for i in 1..<samples.count {
-                let timeDiff = samples[i].timestamp.timeIntervalSince(samples[i-1].timestamp) / 3600.0 // hours
-                let avgPower = (samples[i].powerWatts + samples[i-1].powerWatts) / 2.0
-                totalEnergyWh += avgPower * timeDiff
+                let timeDiffHours = samples[i].timestamp.timeIntervalSince(samples[i-1].timestamp) / 3600.0 // Convert seconds to hours
+                let avgPowerW = (samples[i].powerWatts + samples[i-1].powerWatts) / 2.0 // Average power in watts
+                let avgPowerKW = avgPowerW / 1000.0 // Convert watts to kilowatts
+                let energyKWh = avgPowerKW * timeDiffHours // kW × hours = kWh
+                totalEnergyWh += energyKWh * 1000.0 // Convert kWh to Wh for consistency
             }
             
             averagePowerW = samples.map(\.powerWatts).reduce(0, +) / Double(samples.count)
@@ -515,6 +520,8 @@ struct EnergyMetrics {
     }
     
     var dailyAverageKWh: Double {
-        return totalEnergyKWh / max(1, uptimeHours / 24.0)
+        let uptimeHours = max(1, Double(uptimeMinutes) / 60.0)
+        let dailyHours = uptimeHours / max(1, uptimeHours / 24.0)
+        return totalEnergyKWh / max(1, dailyHours)
     }
 }

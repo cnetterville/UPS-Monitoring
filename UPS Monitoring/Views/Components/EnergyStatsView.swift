@@ -584,6 +584,15 @@ struct EnergyStatsView: View {
                         )
                 }
                 
+                // Show current power consumption details
+                if let currentPower = status?.outputPower {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Current Consumption: \(Int(currentPower))W (\(String(format: "%.3f", currentPower / 1000.0)) kW)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
                 HStack(spacing: 24) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("This Period")
@@ -593,6 +602,13 @@ struct EnergyStatsView: View {
                         Text("$\(String(format: "%.2f", calculateCost(for: selectedTimeRange)))")
                             .font(.system(size: 20, weight: .bold, design: .monospaced))
                             .foregroundStyle(.green)
+                        
+                        // Show the calculation breakdown
+                        if let energyKWh = energyMetrics?.totalEnergyKWh {
+                            Text("\(String(format: "%.2f", energyKWh)) kWh")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     
                     Spacer()
@@ -605,6 +621,14 @@ struct EnergyStatsView: View {
                         Text("$\(String(format: "%.2f", calculateMonthlyCost()))")
                             .font(.system(size: 20, weight: .bold, design: .monospaced))
                             .foregroundStyle(.orange)
+                        
+                        // Show monthly kWh estimate
+                        if let currentPower = status?.outputPower {
+                            let monthlyKWh = (currentPower / 1000.0) * (30.0 * 24.0) // 720 hours
+                            Text("\(String(format: "%.1f", monthlyKWh)) kWh/month")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -629,6 +653,17 @@ struct EnergyStatsView: View {
         }
     }
     
+    private func calculateEnergyCost(powerWatts: Double, timeHours: Double, ratePerKWh: Double = 0.12) -> Double {
+        // Convert watts to kilowatts
+        let powerKW = powerWatts / 1000.0
+        
+        // Calculate energy in kWh (Power in kW × Time in hours)
+        let energyKWh = powerKW * timeHours
+        
+        // Calculate cost (Energy in kWh × Rate per kWh)
+        return energyKWh * ratePerKWh
+    }
+
     private func calculateAverageEfficiency() -> String {
         return energyMetrics?.averageEfficiency.formatted(.number.precision(.fractionLength(1))) ?? "--"
     }
@@ -654,13 +689,27 @@ struct EnergyStatsView: View {
     }
     
     private func calculateCost(for range: TimeRange) -> Double {
-        let energyUsedKWh = calculateEnergyConsumed() / 1000.0
+        let energyUsedWh = calculateEnergyConsumed() // This returns Wh
+        let energyUsedKWh = energyUsedWh / 1000.0 // Convert Wh to kWh
         return energyUsedKWh * 0.12 // $0.12 per kWh
     }
     
     private func calculateMonthlyCost() -> Double {
-        let dailyAverage = calculateDailyAverage()
-        return dailyAverage * 30 * 0.12
+        guard let currentPower = status?.outputPower, currentPower > 0 else {
+            return 0.0
+        }
+        
+        // Convert current power from watts to kilowatts
+        let powerKW = currentPower / 1000.0
+        
+        // Calculate monthly hours (30 days × 24 hours)
+        let monthlyHours = 30.0 * 24.0 // 720 hours
+        
+        // Calculate monthly energy consumption in kWh
+        let monthlyEnergyKWh = powerKW * monthlyHours
+        
+        // Calculate monthly cost
+        return monthlyEnergyKWh * 0.12 // $0.12 per kWh
     }
     
     private func formatDuration(_ interval: TimeInterval) -> String {
