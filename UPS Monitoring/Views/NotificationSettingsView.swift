@@ -810,11 +810,6 @@ struct NotificationSettingsView: View {
                                 
                                 Spacer()
                             }
-                            
-                            // DEBUG: Add force send button
-                            LiquidGlassButton("Force Send Daily", icon: "exclamationmark.triangle.fill", style: .secondary) {
-                                ReportSchedulerService.shared.forceSendDailyReport()
-                            }
                         }
                         .padding(.top, 8)
                     }

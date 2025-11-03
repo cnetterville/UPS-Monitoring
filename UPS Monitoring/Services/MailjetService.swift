@@ -15,29 +15,44 @@ class MailjetService: ObservableObject {
     
     // MARK: - Configuration
     @Published var isConfigured = false
+    @Published var isLoading = false
     @Published var apiKey: String = "" {
         didSet {
-            updateConfiguration()
+            if !isLoading {
+                print("🔧 API Key updated: \(apiKey.isEmpty ? "EMPTY" : "[HIDDEN]")")
+                updateConfiguration()
+            }
         }
     }
     @Published var apiSecret: String = "" {
         didSet {
-            updateConfiguration()
+            if !isLoading {
+                print("🔧 API Secret updated: \(apiSecret.isEmpty ? "EMPTY" : "[HIDDEN]")")
+                updateConfiguration()
+            }
         }
     }
     @Published var fromEmail: String = "" {
         didSet {
-            updateConfiguration()
+            if !isLoading {
+                print("🔧 From Email updated: '\(fromEmail)'")
+                updateConfiguration()
+            }
         }
     }
     @Published var fromName: String = "UPS Monitoring" {
         didSet {
-            updateConfiguration()
+            if !isLoading {
+                print("🔧 From Name updated: '\(fromName)'")
+                updateConfiguration()
+            }
         }
     }
     @Published var recipients: [EmailRecipient] = [] {
         didSet {
-            saveRecipients()
+            if !isLoading {
+                saveRecipients()
+            }
         }
     }
     
@@ -53,45 +68,74 @@ class MailjetService: ObservableObject {
     
     private init() {
         loadConfiguration()
-        loadRecipients()
     }
     
     // MARK: - Configuration Management
     
     private func updateConfiguration() {
+        let wasConfigured = isConfigured
         isConfigured = !apiKey.isEmpty && !apiSecret.isEmpty && !fromEmail.isEmpty
+        
+        if isConfigured != wasConfigured {
+            print("📊 Configuration status changed: \(isConfigured ? "CONFIGURED" : "NOT CONFIGURED")")
+        }
+        
         saveConfiguration()
     }
     
     private func saveConfiguration() {
+        guard !isLoading else {
+            print("⚠️  Skipping save during loading")
+            return
+        }
+        
+        print("💾 Saving configuration...")
+        
         // Store sensitive data in Keychain
         do {
-            if !apiKey.isEmpty {
-                try KeychainService.shared.store(apiKey, for: KeychainService.Keys.mailjetAPIKey)
+            if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try KeychainService.shared.store(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: KeychainService.Keys.mailjetAPIKey)
+                print("✅ API Key saved to keychain")
             } else {
                 try? KeychainService.shared.delete(for: KeychainService.Keys.mailjetAPIKey)
+                print("🗑️  API Key deleted from keychain")
             }
             
-            if !apiSecret.isEmpty {
-                try KeychainService.shared.store(apiSecret, for: KeychainService.Keys.mailjetAPISecret)
+            if !apiSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try KeychainService.shared.store(apiSecret.trimmingCharacters(in: .whitespacesAndNewlines), for: KeychainService.Keys.mailjetAPISecret)
+                print("✅ API Secret saved to keychain")
             } else {
                 try? KeychainService.shared.delete(for: KeychainService.Keys.mailjetAPISecret)
+                print("🗑️  API Secret deleted from keychain")
             }
         } catch {
             print("❌ Failed to save credentials to Keychain: \(error.localizedDescription)")
         }
         
         // Store non-sensitive data in UserDefaults
-        UserDefaults.standard.set(fromEmail, forKey: "mailjet_from_email")
-        UserDefaults.standard.set(fromName, forKey: "mailjet_from_name")
+        let trimmedFromEmail = fromEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedFromName = fromName.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        UserDefaults.standard.set(trimmedFromEmail, forKey: "mailjet_from_email")
+        UserDefaults.standard.set(trimmedFromName, forKey: "mailjet_from_name")
+        
+        print("✅ From Email saved: '\(trimmedFromEmail)'")
+        print("✅ From Name saved: '\(trimmedFromName)'")
     }
     
     private func loadConfiguration() {
+        print("📥 Loading configuration...")
+        isLoading = true
+        
         // Load sensitive data from Keychain
         do {
-            apiKey = try KeychainService.shared.retrieve(for: KeychainService.Keys.mailjetAPIKey) ?? ""
-            apiSecret = try KeychainService.shared.retrieve(for: KeychainService.Keys.mailjetAPISecret) ?? ""
-            print("🔐 Successfully loaded credentials from Keychain")
+            let loadedApiKey = try KeychainService.shared.retrieve(for: KeychainService.Keys.mailjetAPIKey) ?? ""
+            let loadedApiSecret = try KeychainService.shared.retrieve(for: KeychainService.Keys.mailjetAPISecret) ?? ""
+            
+            print("🔐 Loaded from Keychain - API Key: \(loadedApiKey.isEmpty ? "EMPTY" : "[HIDDEN]"), API Secret: \(loadedApiSecret.isEmpty ? "EMPTY" : "[HIDDEN]")")
+            
+            apiKey = loadedApiKey
+            apiSecret = loadedApiSecret
         } catch {
             print("❌ Failed to load credentials from Keychain: \(error.localizedDescription)")
             // Fallback to empty strings
@@ -100,14 +144,32 @@ class MailjetService: ObservableObject {
         }
         
         // Load non-sensitive data from UserDefaults
-        fromEmail = UserDefaults.standard.string(forKey: "mailjet_from_email") ?? ""
-        fromName = UserDefaults.standard.string(forKey: "mailjet_from_name") ?? "UPS Monitoring"
+        let loadedFromEmail = UserDefaults.standard.string(forKey: "mailjet_from_email") ?? ""
+        let loadedFromName = UserDefaults.standard.string(forKey: "mailjet_from_name") ?? "UPS Monitoring"
+        
+        print("📱 Loaded from UserDefaults - From Email: '\(loadedFromEmail)', From Name: '\(loadedFromName)'")
+        
+        fromEmail = loadedFromEmail
+        fromName = loadedFromName
+        
+        // Load recipients
+        loadRecipients()
+        
+        isLoading = false
         updateConfiguration()
+        
+        print("🎉 Configuration loaded - Is Configured: \(isConfigured)")
+    }
+    
+    func reloadConfiguration() {
+        print("🔄 Reloading configuration...")
+        loadConfiguration()
     }
     
     private func saveRecipients() {
         if let data = try? JSONEncoder().encode(recipients) {
             UserDefaults.standard.set(data, forKey: "mailjet_recipients")
+            print("✅ Recipients saved: \(recipients.count) recipients")
         }
     }
     
@@ -115,6 +177,7 @@ class MailjetService: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: "mailjet_recipients"),
            let decoded = try? JSONDecoder().decode([EmailRecipient].self, from: data) {
             recipients = decoded
+            print("📥 Recipients loaded: \(recipients.count) recipients")
         }
     }
     
@@ -152,6 +215,11 @@ class MailjetService: ObservableObject {
     }
     
     private func checkRateLimit(for alertType: EmailAlertType) async throws {
+        // Skip rate limiting for test emails and reports
+        if alertType == .test || alertType == .report {
+            return
+        }
+        
         // Clean old entries
         let oneHourAgo = Date().addingTimeInterval(-3600)
         emailsSentThisHour = emailsSentThisHour.filter { $0.0 > oneHourAgo }
@@ -170,6 +238,11 @@ class MailjetService: ObservableObject {
     }
     
     private func updateRateLimit(for alertType: EmailAlertType) async {
+        // Don't update rate limit tracking for test emails and reports
+        if alertType == .test || alertType == .report {
+            return
+        }
+        
         lastEmailTimes[alertType.rawValue] = Date()
         emailsSentThisHour.append((Date(), alertType.rawValue))
     }

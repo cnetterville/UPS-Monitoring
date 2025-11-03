@@ -20,6 +20,7 @@ struct MailjetConfigurationView: View {
     @State private var fromName: String = ""
     @State private var showingApiKey = false
     @State private var showingApiSecret = false
+    @State private var hasLoadedInitialValues = false
     
     var body: some View {
         ZStack {
@@ -43,6 +44,11 @@ struct MailjetConfigurationView: View {
                         if isFormValid {
                             testSection
                         }
+                        
+                        // Debug section (in development)
+                        #if DEBUG
+                        debugSection
+                        #endif
                     }
                     .padding(20)
                 }
@@ -51,6 +57,11 @@ struct MailjetConfigurationView: View {
         .frame(width: 600, height: 700)
         .onAppear {
             loadCurrentSettings()
+        }
+        .onChange(of: mailjetService.isLoading) { _, isLoading in
+            if !isLoading && !hasLoadedInitialValues {
+                loadCurrentSettings()
+            }
         }
     }
     
@@ -367,10 +378,30 @@ struct MailjetConfigurationView: View {
     }
     
     private func loadCurrentSettings() {
+        print("🔄 Loading current settings from MailjetService...")
+        print("   - Service is loading: \(mailjetService.isLoading)")
+        print("   - Service API Key: \(mailjetService.apiKey.isEmpty ? "EMPTY" : "[HIDDEN]")")
+        print("   - Service API Secret: \(mailjetService.apiSecret.isEmpty ? "EMPTY" : "[HIDDEN]")")
+        print("   - Service From Email: '\(mailjetService.fromEmail)'")
+        print("   - Service From Name: '\(mailjetService.fromName)'")
+        
+        // Don't load if service is still loading from keychain
+        guard !mailjetService.isLoading else {
+            print("⏳ Service is still loading, waiting...")
+            return
+        }
+        
         apiKey = mailjetService.apiKey
         apiSecret = mailjetService.apiSecret
         fromEmail = mailjetService.fromEmail
         fromName = mailjetService.fromName
+        hasLoadedInitialValues = true
+        
+        print("✅ View state updated with current values")
+        print("   - View API Key: \(apiKey.isEmpty ? "EMPTY" : "[HIDDEN]")")
+        print("   - View API Secret: \(apiSecret.isEmpty ? "EMPTY" : "[HIDDEN]")")
+        print("   - View From Email: '\(fromEmail)'")
+        print("   - View From Name: '\(fromName)'")
     }
     
     private func saveConfiguration() {
@@ -378,6 +409,12 @@ struct MailjetConfigurationView: View {
         let trimmedApiSecret = apiSecret.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedFromEmail = fromEmail.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedFromName = fromName.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        print("💾 Saving configuration from view...")
+        print("   - Saving API Key: \(trimmedApiKey.isEmpty ? "EMPTY" : "[HIDDEN]")")
+        print("   - Saving API Secret: \(trimmedApiSecret.isEmpty ? "EMPTY" : "[HIDDEN]")")
+        print("   - Saving From Email: '\(trimmedFromEmail)'")
+        print("   - Saving From Name: '\(trimmedFromName)'")
         
         // Show keychain access message if this is the first time saving credentials
         let isFirstTimeSetup = mailjetService.apiKey.isEmpty && mailjetService.apiSecret.isEmpty
@@ -391,7 +428,97 @@ struct MailjetConfigurationView: View {
         mailjetService.apiSecret = trimmedApiSecret
         mailjetService.fromEmail = trimmedFromEmail
         mailjetService.fromName = trimmedFromName
+        
+        print("✅ Configuration saved to MailjetService")
     }
+    
+    #if DEBUG
+    private var debugSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "debug-section") {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    Image(systemName: "ladybug")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.orange)
+                    
+                    Text("Debug Information")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.orange)
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Service State:")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("• Is Loading: \(mailjetService.isLoading ? "YES" : "NO")")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        
+                        Text("• Is Configured: \(mailjetService.isConfigured ? "YES" : "NO")")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        
+                        Text("• API Key Set: \(mailjetService.apiKey.isEmpty ? "NO" : "YES")")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        
+                        Text("• API Secret Set: \(mailjetService.apiSecret.isEmpty ? "NO" : "YES")")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        
+                        Text("• From Email: '\(mailjetService.fromEmail)'")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        
+                        Text("• From Name: '\(mailjetService.fromName)'")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        
+                        Text("• Has Loaded Initial: \(hasLoadedInitialValues ? "YES" : "NO")")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                HStack(spacing: 12) {
+                    LiquidGlassButton(
+                        "Reload Config",
+                        icon: "arrow.clockwise",
+                        style: .secondary
+                    ) {
+                        mailjetService.reloadConfiguration()
+                        hasLoadedInitialValues = false
+                        loadCurrentSettings()
+                    }
+                    
+                    LiquidGlassButton(
+                        "Print Debug",
+                        icon: "printer",
+                        style: .secondary
+                    ) {
+                        print("=== MAILJET DEBUG INFO ===")
+                        print("Service - API Key: \(mailjetService.apiKey.isEmpty ? "EMPTY" : "[HIDDEN]")")
+                        print("Service - API Secret: \(mailjetService.apiSecret.isEmpty ? "EMPTY" : "[HIDDEN]")")
+                        print("Service - From Email: '\(mailjetService.fromEmail)'")
+                        print("Service - From Name: '\(mailjetService.fromName)'")
+                        print("Service - Is Loading: \(mailjetService.isLoading)")
+                        print("Service - Is Configured: \(mailjetService.isConfigured)")
+                        print("View - API Key: \(apiKey.isEmpty ? "EMPTY" : "[HIDDEN]")")
+                        print("View - API Secret: \(apiSecret.isEmpty ? "EMPTY" : "[HIDDEN]")")
+                        print("View - From Email: '\(fromEmail)'")
+                        print("View - From Name: '\(fromName)'")
+                        print("View - Has Loaded Initial: \(hasLoadedInitialValues)")
+                        print("========================")
+                    }
+                    
+                    Spacer()
+                }
+            }
+        }
+    }
+    #endif
     
     private func sendTestEmail() {
         // Temporarily apply the settings for testing
