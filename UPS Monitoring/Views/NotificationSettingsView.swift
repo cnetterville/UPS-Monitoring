@@ -1032,39 +1032,6 @@ struct NotificationSettingsView: View {
                                 
                                 Spacer()
                             }
-                            
-                            // Debug section (in development)
-                            #if DEBUG
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Debug Scheduler")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.orange)
-                                    .textCase(.uppercase)
-                                    .tracking(0.5)
-                                
-                                HStack(spacing: 8) {
-                                    LiquidGlassButton(
-                                        "Debug Info",
-                                        icon: "info.circle",
-                                        style: .secondary
-                                    ) {
-                                        ReportSchedulerService.shared.debugReportScheduler()
-                                    }
-                                    
-                                    LiquidGlassButton(
-                                        "Force Check",
-                                        icon: "clock.arrow.circlepath",
-                                        style: .secondary
-                                    ) {
-                                        Task {
-                                            await ReportSchedulerService.shared.manualReportCheck()
-                                        }
-                                    }
-                                    
-                                    Spacer()
-                                }
-                            }
-                            #endif
                         }
                         .padding(.top, 8)
                     }
