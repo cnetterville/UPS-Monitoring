@@ -90,6 +90,23 @@ class NotificationService: NSObject, ObservableObject {
         didSet { saveEmailSettings() }
     }
     
+    // Report scheduling times
+    @Published var dailyReportTime = Date() {
+        didSet { saveEmailSettings() }
+    }
+    @Published var weeklyReportTime = Date() {
+        didSet { saveEmailSettings() }
+    }
+    @Published var monthlyReportTime = Date() {
+        didSet { saveEmailSettings() }
+    }
+    @Published var weeklyReportWeekday = 2 { // Monday = 2
+        didSet { saveEmailSettings() }
+    }
+    @Published var monthlyReportDay = 1 { // 1st of month
+        didSet { saveEmailSettings() }
+    }
+    
     @Published var notificationPermissionStatus: UNAuthorizationStatus = .notDetermined
     
     // Track previous status to detect changes
@@ -138,14 +155,29 @@ class NotificationService: NSObject, ObservableObject {
             "emailOnMaintenance": emailOnMaintenance,
             "emailDailyReports": emailDailyReports,
             "emailWeeklyReports": emailWeeklyReports,
-            "emailMonthlyReports": emailMonthlyReports
+            "emailMonthlyReports": emailMonthlyReports,
+            "dailyReportTime": dailyReportTime,
+            "weeklyReportTime": weeklyReportTime,
+            "monthlyReportTime": monthlyReportTime,
+            "weeklyReportWeekday": weeklyReportWeekday,
+            "monthlyReportDay": monthlyReportDay
         ]
         
         UserDefaults.standard.set(settings, forKey: "emailNotificationSettings")
     }
     
     private func loadEmailSettings() {
-        guard let settings = UserDefaults.standard.dictionary(forKey: "emailNotificationSettings") else { return }
+        guard let settings = UserDefaults.standard.dictionary(forKey: "emailNotificationSettings") else { 
+            // Set default times if no settings exist
+            let calendar = Calendar.current
+            var components = DateComponents()
+            components.hour = 8
+            components.minute = 0
+            dailyReportTime = calendar.date(from: components) ?? Date()
+            weeklyReportTime = calendar.date(from: components) ?? Date()
+            monthlyReportTime = calendar.date(from: components) ?? Date()
+            return 
+        }
         
         emailNotificationsEnabled = settings["emailNotificationsEnabled"] as? Bool ?? false
         emailOnCritical = settings["emailOnCritical"] as? Bool ?? true
@@ -154,6 +186,40 @@ class NotificationService: NSObject, ObservableObject {
         emailDailyReports = settings["emailDailyReports"] as? Bool ?? false
         emailWeeklyReports = settings["emailWeeklyReports"] as? Bool ?? true
         emailMonthlyReports = settings["emailMonthlyReports"] as? Bool ?? false
+        
+        // Load report times with defaults
+        if let savedDailyTime = settings["dailyReportTime"] as? Date {
+            dailyReportTime = savedDailyTime
+        } else {
+            let calendar = Calendar.current
+            var components = DateComponents()
+            components.hour = 8
+            components.minute = 0
+            dailyReportTime = calendar.date(from: components) ?? Date()
+        }
+        
+        if let savedWeeklyTime = settings["weeklyReportTime"] as? Date {
+            weeklyReportTime = savedWeeklyTime
+        } else {
+            let calendar = Calendar.current
+            var components = DateComponents()
+            components.hour = 8
+            components.minute = 0
+            weeklyReportTime = calendar.date(from: components) ?? Date()
+        }
+        
+        if let savedMonthlyTime = settings["monthlyReportTime"] as? Date {
+            monthlyReportTime = savedMonthlyTime
+        } else {
+            let calendar = Calendar.current
+            var components = DateComponents()
+            components.hour = 8
+            components.minute = 0
+            monthlyReportTime = calendar.date(from: components) ?? Date()
+        }
+        
+        weeklyReportWeekday = settings["weeklyReportWeekday"] as? Int ?? 2 // Monday
+        monthlyReportDay = settings["monthlyReportDay"] as? Int ?? 1 // 1st of month
     }
 
     func initialize(with monitoringService: UPSMonitoringService) {

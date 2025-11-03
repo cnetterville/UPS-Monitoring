@@ -631,22 +631,232 @@ struct NotificationSettingsView: View {
                 }
                 
                 VStack(spacing: 16) {
-                    EmailReportToggleRow(
-                        title: "Daily Reports",
-                        description: "Daily status summary at 8:00 AM",
-                        isOn: $notificationService.emailDailyReports
+                    // Daily Reports
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Daily Reports")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(colorScheme == .dark ? .white : .black)
+                                
+                                Text("Daily status summary")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            LiquidGlassToggle(isOn: $notificationService.emailDailyReports)
+                        }
+                        
+                        if notificationService.emailDailyReports {
+                            HStack(spacing: 12) {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.green)
+                                    .frame(width: 20)
+                                
+                                Text("Send at:")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.primary)
+                                
+                                Spacer()
+                                
+                                DatePicker("", selection: $notificationService.dailyReportTime, displayedComponents: .hourAndMinute)
+                                    .labelsHidden()
+                                    .datePickerStyle(.compact)
+                            }
+                            .padding(.leading, 8)
+                        }
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.3)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.2),
+                                                Color.green.opacity(notificationService.emailDailyReports ? 0.3 : 0.1)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 0.8
+                                    )
+                            )
                     )
                     
-                    EmailReportToggleRow(
-                        title: "Weekly Reports",
-                        description: "Weekly summary every Monday morning",
-                        isOn: $notificationService.emailWeeklyReports
+                    // Weekly Reports
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Weekly Reports")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(colorScheme == .dark ? .white : .black)
+                                
+                                Text("Weekly summary")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            LiquidGlassToggle(isOn: $notificationService.emailWeeklyReports)
+                        }
+                        
+                        if notificationService.emailWeeklyReports {
+                            VStack(spacing: 8) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "calendar")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(.green)
+                                        .frame(width: 20)
+                                    
+                                    Text("Send on:")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.primary)
+                                    
+                                    Spacer()
+                                    
+                                    Picker("Weekday", selection: $notificationService.weeklyReportWeekday) {
+                                        Text("Sunday").tag(1)
+                                        Text("Monday").tag(2)
+                                        Text("Tuesday").tag(3)
+                                        Text("Wednesday").tag(4)
+                                        Text("Thursday").tag(5)
+                                        Text("Friday").tag(6)
+                                        Text("Saturday").tag(7)
+                                    }
+                                    .pickerStyle(.menu)
+                                    .frame(minWidth: 100)
+                                }
+                                
+                                HStack(spacing: 12) {
+                                    Image(systemName: "clock")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(.green)
+                                        .frame(width: 20)
+                                    
+                                    Text("Send at:")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.primary)
+                                    
+                                    Spacer()
+                                    
+                                    DatePicker("", selection: $notificationService.weeklyReportTime, displayedComponents: .hourAndMinute)
+                                        .labelsHidden()
+                                        .datePickerStyle(.compact)
+                                }
+                            }
+                            .padding(.leading, 8)
+                        }
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.3)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.2),
+                                                Color.green.opacity(notificationService.emailWeeklyReports ? 0.3 : 0.1)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 0.8
+                                    )
+                            )
                     )
                     
-                    EmailReportToggleRow(
-                        title: "Monthly Reports",
-                        description: "Monthly summary on the 1st of each month",
-                        isOn: $notificationService.emailMonthlyReports
+                    // Monthly Reports
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Monthly Reports")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(colorScheme == .dark ? .white : .black)
+                                
+                                Text("Monthly summary")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            LiquidGlassToggle(isOn: $notificationService.emailMonthlyReports)
+                        }
+                        
+                        if notificationService.emailMonthlyReports {
+                            VStack(spacing: 8) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "calendar")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(.green)
+                                        .frame(width: 20)
+                                    
+                                    Text("Send on day:")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.primary)
+                                    
+                                    Spacer()
+                                    
+                                    Picker("Day of month", selection: $notificationService.monthlyReportDay) {
+                                        ForEach(Array(1...31), id: \.self) { day in
+                                            Text("\(day)\(day.ordinalSuffix)")
+                                                .tag(day)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                    .frame(minWidth: 80)
+                                }
+                                
+                                HStack(spacing: 12) {
+                                    Image(systemName: "clock")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(.green)
+                                        .frame(width: 20)
+                                    
+                                    Text("Send at:")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.primary)
+                                    
+                                    Spacer()
+                                    
+                                    DatePicker("", selection: $notificationService.monthlyReportTime, displayedComponents: .hourAndMinute)
+                                        .labelsHidden()
+                                        .datePickerStyle(.compact)
+                                }
+                            }
+                            .padding(.leading, 8)
+                        }
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.3)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.2),
+                                                Color.green.opacity(notificationService.emailMonthlyReports ? 0.3 : 0.1)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 0.8
+                                    )
+                            )
                     )
                 }
                 
@@ -679,6 +889,10 @@ struct NotificationSettingsView: View {
                                     Text(nextDaily, style: .relative)
                                         .font(.system(size: 12, design: .monospaced))
                                         .foregroundStyle(.secondary)
+                                    
+                                    Text("at \(nextDaily.formatted(date: .omitted, time: .shortened))")
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                             
@@ -698,6 +912,10 @@ struct NotificationSettingsView: View {
                                     Text(nextWeekly, style: .relative)
                                         .font(.system(size: 12, design: .monospaced))
                                         .foregroundStyle(.secondary)
+                                    
+                                    Text("at \(nextWeekly.formatted(date: .omitted, time: .shortened))")
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                             
@@ -715,6 +933,10 @@ struct NotificationSettingsView: View {
                                     Spacer()
                                     
                                     Text(nextMonthly, style: .relative)
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                    
+                                    Text("at \(nextMonthly.formatted(date: .omitted, time: .shortened))")
                                         .font(.system(size: 12, design: .monospaced))
                                         .foregroundStyle(.secondary)
                                 }
@@ -810,6 +1032,39 @@ struct NotificationSettingsView: View {
                                 
                                 Spacer()
                             }
+                            
+                            // Debug section (in development)
+                            #if DEBUG
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Debug Scheduler")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.orange)
+                                    .textCase(.uppercase)
+                                    .tracking(0.5)
+                                
+                                HStack(spacing: 8) {
+                                    LiquidGlassButton(
+                                        "Debug Info",
+                                        icon: "info.circle",
+                                        style: .secondary
+                                    ) {
+                                        ReportSchedulerService.shared.debugReportScheduler()
+                                    }
+                                    
+                                    LiquidGlassButton(
+                                        "Force Check",
+                                        icon: "clock.arrow.circlepath",
+                                        style: .secondary
+                                    ) {
+                                        Task {
+                                            await ReportSchedulerService.shared.manualReportCheck()
+                                        }
+                                    }
+                                    
+                                    Spacer()
+                                }
+                            }
+                            #endif
                         }
                         .padding(.top, 8)
                     }
@@ -1252,5 +1507,22 @@ struct NotificationSettingsView_Previews: PreviewProvider {
     static var previews: some View {
         NotificationSettingsView()
             .frame(width: 600, height: 700)
+    }
+}
+
+// MARK: - Extensions
+
+extension Int {
+    var ordinalSuffix: String {
+        switch self % 10 {
+        case 1:
+            return self % 100 == 11 ? "th" : "st"
+        case 2:
+            return self % 100 == 12 ? "th" : "nd"
+        case 3:
+            return self % 100 == 13 ? "th" : "rd"
+        default:
+            return "th"
+        }
     }
 }
