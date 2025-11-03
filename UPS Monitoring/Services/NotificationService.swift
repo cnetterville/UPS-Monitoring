@@ -513,8 +513,16 @@ class NotificationService: NSObject, ObservableObject {
     }
     
     func sendWeeklyReport(_ devices: [UPSDevice], statusData: [UUID: UPSStatus]) {
-        guard emailNotificationsEnabled && emailWeeklyReports else { return }
+        print("🔍 Weekly report request:")
+        print("   - Email notifications enabled: \(emailNotificationsEnabled)")
+        print("   - Weekly reports enabled: \(emailWeeklyReports)")
         
+        guard emailNotificationsEnabled && emailWeeklyReports else { 
+            print("   ❌ Weekly report blocked by settings")
+            return 
+        }
+        
+        print("   ✅ Sending weekly report")
         let reportMessage = EmailTemplateService.createStatusReport(
             devices: devices,
             statusData: statusData,
@@ -524,8 +532,16 @@ class NotificationService: NSObject, ObservableObject {
     }
     
     func sendMonthlyReport(_ devices: [UPSDevice], statusData: [UUID: UPSStatus]) {
-        guard emailNotificationsEnabled && emailMonthlyReports else { return }
+        print("🔍 Monthly report request:")
+        print("   - Email notifications enabled: \(emailNotificationsEnabled)")
+        print("   - Monthly reports enabled: \(emailMonthlyReports)")
         
+        guard emailNotificationsEnabled && emailMonthlyReports else { 
+            print("   ❌ Monthly report blocked by settings")
+            return 
+        }
+        
+        print("   ✅ Sending monthly report")
         let reportMessage = EmailTemplateService.createStatusReport(
             devices: devices,
             statusData: statusData,

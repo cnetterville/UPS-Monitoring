@@ -117,7 +117,7 @@ struct ContentView: View {
                         if monitoringService.isMonitoring {
                             HStack(spacing: 6) {
                                 Image(systemName: "dot.radiowaves.left.and.right")
-                                    .symbolEffect(.variableColor.iterative)
+                                    // Removed expensive symbolEffect for better performance
                                     .foregroundStyle(
                                         LinearGradient(
                                             colors: [Color.green, Color.mint],

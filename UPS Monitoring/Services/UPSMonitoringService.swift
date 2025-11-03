@@ -19,18 +19,22 @@ class UPSMonitoringService: ObservableObject {
     @Published var isLoading = false
     
     private var monitoringTimer: Timer?
-    private let updateInterval: TimeInterval = 30.0 // 30 seconds
+    private let updateInterval: TimeInterval = 60.0 // Increased from 30s to 60s for less CPU usage
     private let dataService = DataPersistenceService.shared
     
-    private let maxConcurrentQueries = 4 // Limit concurrent network operations
+    private let maxConcurrentQueries = 2 // Reduced from 4 to 2 to lower CPU load
     private var lastStatusUpdate: Date?
-    private let statusUpdateThrottle: TimeInterval = 1.0 // Batch UI updates
+    private let statusUpdateThrottle: TimeInterval = 2.0 // Increased from 1.0s to reduce UI updates
     private var pendingStatusUpdates: [UUID: UPSStatus] = [:]
     private var statusUpdateTimer: Timer?
     
     private var snmpConnectionPool: [String: Date] = [:]
-    private let connectionPoolTimeout: TimeInterval = 300 // 5 minutes
+    private let connectionPoolTimeout: TimeInterval = 600 // Increased from 300s to reduce connection churn
     
+    // Background queue for heavy operations
+    private let backgroundQueue = DispatchQueue(label: "ups.monitoring.background", qos: .background)
+    private let networkQueue = DispatchQueue(label: "ups.monitoring.network", qos: .utility, attributes: .concurrent)
+
     // SNMP OIDs for UPS monitoring (RFC 1628 - UPS MIB + CyberPower specific)
     private struct UPSOIDs {
         // Basic UPS Info
@@ -732,7 +736,7 @@ class UPSMonitoringService: ObservableObject {
                     
                     sendNextCommand()
                 }
-            })
+            }) 
         }
         
         sendNextCommand()
@@ -888,7 +892,7 @@ class UPSMonitoringService: ObservableObject {
                 }
                 
                 if !runtimeFound {
-                    print("❌ No valid SNMP runtime found from any OID")
+                    // No valid SNMP runtime found from any OID
                 }
                 
                 // Get battery current (for charging detection)

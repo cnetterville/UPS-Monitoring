@@ -8,7 +8,6 @@
 import Foundation
 import SwiftUI
 
-@MainActor
 class DataPersistenceService {
     static let shared = DataPersistenceService()
     
@@ -25,14 +24,17 @@ class DataPersistenceService {
     }
     
     // MARK: - In-memory caches
-    private var powerSamples: [String: [PowerSampleData]] = [:]
-    private var deviceStatistics: [String: [DeviceStatisticsData]] = [:]
+    @MainActor private var powerSamples: [String: [PowerSampleData]] = [:]
+    @MainActor private var deviceStatistics: [String: [DeviceStatisticsData]] = [:]
     
-    private var isDirty = false
-    private var lastSaveTime = Date()
-    private let saveInterval: TimeInterval = 60.0 // Save every minute instead of immediately
-    private var saveTimer: Timer?
-    private let maxSamplesPerDevice = 10080 // 1 week at 1-minute intervals
+    @MainActor private var isDirty = false
+    @MainActor private var lastSaveTime = Date()
+    private let saveInterval: TimeInterval = 300.0 // Increased from 60s to 5 minutes to reduce I/O
+    @MainActor private var saveTimer: Timer?
+    private let maxSamplesPerDevice = 8640 // Reduced from 10080 (6 days at 1-minute intervals)
+    
+    // Background queue for I/O operations
+    private let ioQueue = DispatchQueue(label: "data.persistence.io", qos: .background)
     
     // MARK: - Initialization
     
@@ -40,18 +42,32 @@ class DataPersistenceService {
         // Get documents directory
         documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
         
-        // Load existing data
-        loadPowerSamples()
-        loadDeviceStatistics()
+        // Load existing data on background queue
+        Task {
+            await loadDataInBackground()
+        }
         
-        // Start batched save timer instead of continuous cleanup
-        startBatchedSaveTimer()
+        // Start less frequent batched save timer
+        Task { @MainActor in
+            startBatchedSaveTimer()
+            
+            // Schedule cleanup much less frequently (monthly instead of weekly)
+            schedulePeriodicCleanup()
+        }
+    }
+    
+    private func loadDataInBackground() async {
+        let loadedPowerSamples = await loadPowerSamplesSync()
+        let loadedStatistics = await loadDeviceStatisticsSync()
         
-        // Schedule cleanup less frequently (weekly instead of daily)
-        schedulePeriodicCleanup()
+        await MainActor.run { [weak self] in
+            self?.powerSamples = loadedPowerSamples
+            self?.deviceStatistics = loadedStatistics
+        }
     }
     
     // Batched saving to reduce I/O
+    @MainActor
     private func startBatchedSaveTimer() {
         saveTimer = Timer.scheduledTimer(withTimeInterval: saveInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -60,35 +76,37 @@ class DataPersistenceService {
         }
     }
     
+    @MainActor
     private func saveIfNeeded() async {
         guard isDirty else { return }
         
         isDirty = false
         lastSaveTime = Date()
         
-        // Perform saves asynchronously to avoid blocking main thread
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { @MainActor in
-                self.savePowerSamples()
-            }
-            group.addTask { @MainActor in
-                self.saveDeviceStatistics()
-            }
+        // Perform saves on background queue to avoid blocking main thread
+        let currentPowerSamples = powerSamples
+        let currentStatistics = deviceStatistics
+        
+        Task.detached { [weak self] in
+            await self?.savePowerSamplesSync(currentPowerSamples)
+            await self?.saveDeviceStatisticsSync(currentStatistics)
         }
     }
     
-    // Schedule cleanup less frequently
+    // Schedule cleanup much less frequently
+    @MainActor
     private func schedulePeriodicCleanup() {
-        // Run cleanup weekly instead of continuously
-        Timer.scheduledTimer(withTimeInterval: 7 * 24 * 60 * 60, repeats: true) { _ in
+        // Run cleanup monthly instead of weekly
+        Timer.scheduledTimer(withTimeInterval: 30 * 24 * 60 * 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                await self.cleanupOldData()
+                await self?.cleanupOldData()
             }
         }
     }
     
     // MARK: - Power Sample Management
     
+    @MainActor
     func savePowerSample(deviceId: UUID, power: Double, voltage: Double?, current: Double?, load: Double?) {
         let sample = PowerSampleData(
             id: UUID(),
@@ -116,6 +134,7 @@ class DataPersistenceService {
         isDirty = true
     }
     
+    @MainActor
     func savePowerSamples(for deviceId: UUID, samples: [PowerSample]) {
         let deviceKey = deviceId.uuidString
         if powerSamples[deviceKey] == nil {
@@ -135,9 +154,12 @@ class DataPersistenceService {
         }
         
         powerSamples[deviceKey]?.append(contentsOf: sampleData)
-        savePowerSamples()
+        Task {
+            await savePowerSamplesLegacy()
+        }
     }
     
+    @MainActor
     func fetchPowerSamples(for deviceId: UUID, since startDate: Date, until endDate: Date = Date()) -> [PowerSample] {
         let deviceKey = deviceId.uuidString
         guard let samples = powerSamples[deviceKey] else { return [] }
@@ -156,6 +178,7 @@ class DataPersistenceService {
             .sorted { $0.timestamp < $1.timestamp }
     }
     
+    @MainActor
     func getLatestPowerSample(for deviceId: UUID) -> PowerSample? {
         let deviceKey = deviceId.uuidString
         guard let samples = powerSamples[deviceKey],
@@ -172,6 +195,7 @@ class DataPersistenceService {
     
     // MARK: - Device Statistics Management
     
+    @MainActor
     func saveDeviceStatistics(deviceId: UUID, status: UPSStatus) {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -202,9 +226,12 @@ class DataPersistenceService {
             }
         }
         
-        saveDeviceStatistics()
+        Task {
+            await saveDeviceStatisticsLegacy()
+        }
     }
     
+    @MainActor
     private func updateStatistics(_ stats: inout DeviceStatisticsData, with status: UPSStatus) {
         stats.lastUpdate = Date()
         
@@ -249,6 +276,7 @@ class DataPersistenceService {
         }
     }
     
+    @MainActor
     func fetchDeviceStatistics(for deviceId: UUID, since startDate: Date) -> [DeviceStatisticsData] {
         let deviceKey = deviceId.uuidString
         guard let stats = deviceStatistics[deviceKey] else { return [] }
@@ -260,6 +288,7 @@ class DataPersistenceService {
     
     // MARK: - Energy Data for Charts
     
+    @MainActor
     func getEnergyDataPoints(for deviceId: UUID, timeRange: EnergyStatsView.TimeRange) -> [EnergyDataPoint] {
         let endDate = Date()
         let startDate = endDate.addingTimeInterval(-timeRange.interval)
@@ -305,6 +334,7 @@ class DataPersistenceService {
     
     // MARK: - Historical Analytics
     
+    @MainActor
     func calculateEnergyMetrics(for deviceId: UUID, timeRange: EnergyStatsView.TimeRange) -> EnergyMetrics {
         let endDate = Date()
         let startDate = endDate.addingTimeInterval(-timeRange.interval)
@@ -354,58 +384,70 @@ class DataPersistenceService {
         )
     }
     
-    // MARK: - File I/O
+    // MARK: - Background I/O Methods
     
-    private func savePowerSamples() {
+    private func savePowerSamplesSync(_ samples: [String: [PowerSampleData]]) async {
         do {
-            let data = try JSONEncoder().encode(powerSamples)
+            let data = try JSONEncoder().encode(samples)
             try data.write(to: powerSamplesURL)
         } catch {
             print("Failed to save power samples: \(error)")
         }
     }
     
-    private func loadPowerSamples() {
+    private func loadPowerSamplesSync() async -> [String: [PowerSampleData]] {
         do {
             let data = try Data(contentsOf: powerSamplesURL)
-            powerSamples = try JSONDecoder().decode([String: [PowerSampleData]].self, from: data)
+            return try JSONDecoder().decode([String: [PowerSampleData]].self, from: data)
         } catch {
             print("Failed to load power samples: \(error)")
-            powerSamples = [:]
+            return [:]
         }
     }
     
-    private func saveDeviceStatistics() {
+    private func saveDeviceStatisticsSync(_ statistics: [String: [DeviceStatisticsData]]) async {
         do {
-            let data = try JSONEncoder().encode(deviceStatistics)
+            let data = try JSONEncoder().encode(statistics)
             try data.write(to: deviceStatisticsURL)
         } catch {
             print("Failed to save device statistics: \(error)")
         }
     }
     
-    private func loadDeviceStatistics() {
+    private func loadDeviceStatisticsSync() async -> [String: [DeviceStatisticsData]] {
         do {
             let data = try Data(contentsOf: deviceStatisticsURL)
-            deviceStatistics = try JSONDecoder().decode([String: [DeviceStatisticsData]].self, from: data)
+            let statistics = try JSONDecoder().decode([String: [DeviceStatisticsData]].self, from: data)
+            return statistics
         } catch {
             print("Failed to load device statistics: \(error)")
-            deviceStatistics = [:]
+            return [:]
+        }
+    }
+    
+    // Legacy methods for backward compatibility
+    private func savePowerSamplesLegacy() async {
+        let currentSamples = await MainActor.run { powerSamples }
+        await savePowerSamplesSync(currentSamples)
+    }
+    
+    private func saveDeviceStatisticsLegacy() async {
+        let currentStats = await MainActor.run { deviceStatistics }
+        await saveDeviceStatisticsSync(currentStats)
+    }
+    
+    // Force immediate save method for critical situations
+    @MainActor
+    func forceSave() {
+        isDirty = true
+        Task { @MainActor in
+            await saveIfNeeded()
         }
     }
     
     // MARK: - Data Cleanup
     
-    private func startPeriodicCleanup() async {
-        // Run cleanup every 24 hours
-        while !Task.isCancelled {
-            await cleanupOldData()
-            
-            // Sleep for 24 hours
-            try? await Task.sleep(nanoseconds: 24 * 60 * 60 * 1_000_000_000)
-        }
-    }
-    
+    @MainActor
     private func cleanupOldData() async {
         let calendar = Calendar.current
         let cutoffDate = calendar.date(byAdding: .month, value: -6, to: Date())! // Keep 6 months of data
@@ -421,13 +463,14 @@ class DataPersistenceService {
             deviceStatistics[deviceKey] = stats.filter { $0.date >= statsDate }
         }
         
-        savePowerSamples()
-        saveDeviceStatistics()
+        await savePowerSamplesLegacy()
+        await saveDeviceStatisticsLegacy()
         print("Cleaned up old data successfully")
     }
     
     // MARK: - Export Functionality
     
+    @MainActor
     func exportEnergyData(for deviceId: UUID, timeRange: EnergyStatsView.TimeRange) -> URL? {
         let samples = fetchPowerSamples(for: deviceId, since: Date().addingTimeInterval(-timeRange.interval))
         let metrics = calculateEnergyMetrics(for: deviceId, timeRange: timeRange)

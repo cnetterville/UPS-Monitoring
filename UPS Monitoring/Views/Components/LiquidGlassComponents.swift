@@ -446,38 +446,46 @@ extension View {
     }
 }
 
-// MARK: - Animated LiquidGlass Background
+// MARK: - Animated LiquidGlass Background (CPU Optimized)
 
 struct LiquidGlassBackground: View {
     @State private var animationOffset: CGFloat = 0
-
+    @State private var isVisible = false
+    
     var body: some View {
         ZStack {
             LinearGradient(
                 gradient: Gradient(stops: [
-                    .init(color: Color.blue.opacity(0.10), location: 0.0),
-                    .init(color: Color.purple.opacity(0.05), location: 0.3),
-                    .init(color: Color.cyan.opacity(0.08), location: 0.6),
-                    .init(color: Color.mint.opacity(0.04), location: 1.0)
+                    .init(color: Color.blue.opacity(0.08), location: 0.0), // Reduced opacity
+                    .init(color: Color.purple.opacity(0.04), location: 0.3),
+                    .init(color: Color.cyan.opacity(0.06), location: 0.6),
+                    .init(color: Color.mint.opacity(0.03), location: 1.0)
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color.pink.opacity(0.04), location: 0.0),
-                    .init(color: Color.orange.opacity(0.03), location: 0.5),
-                    .init(color: Color.yellow.opacity(0.04), location: 1.0)
-                ]),
-                startPoint: UnitPoint(x: 0.0 + animationOffset, y: 0.0),
-                endPoint: UnitPoint(x: 1.0 + animationOffset, y: 1.0)
-            )
-            .opacity(0.33)
+            
+            if isVisible {
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: Color.pink.opacity(0.03), location: 0.0), // Reduced opacity
+                        .init(color: Color.orange.opacity(0.02), location: 0.5),
+                        .init(color: Color.yellow.opacity(0.03), location: 1.0)
+                    ]),
+                    startPoint: UnitPoint(x: 0.0 + animationOffset, y: 0.0),
+                    endPoint: UnitPoint(x: 1.0 + animationOffset, y: 1.0)
+                )
+                .opacity(0.25) // Reduced opacity
+            }
         }
         .ignoresSafeArea()
         .onAppear {
-            withAnimation(.linear(duration: 20).repeatForever(autoreverses: true)) {
-                animationOffset = 0.28
+            // Delay animation start and make it much slower to reduce CPU usage
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                withAnimation(.linear(duration: 40).repeatForever(autoreverses: true)) { // Increased from 20s to 40s
+                    animationOffset = 0.2 // Reduced from 0.28
+                }
+                isVisible = true
             }
         }
     }

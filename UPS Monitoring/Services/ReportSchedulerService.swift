@@ -24,15 +24,15 @@ class ReportSchedulerService: ObservableObject {
     private var lastWeeklyReportDate: Date?
     private var lastMonthlyReportDate: Date?
     
-    // Check interval (every minute)
-    private let checkInterval: TimeInterval = 60.0
+    // Check interval (every 5 minutes instead of every minute)
+    private let checkInterval: TimeInterval = 300.0 // Increased from 60.0 for better performance
     
     private init() {
         loadReportHistory()
         // Don't start scheduler in init - wait for initialization
         
         // Listen for changes in email notification settings from NotificationService
-        // We'll set this up after initialization to avoid circular dependencies
+        // We'll set up after initialization to avoid circular dependencies
     }
     
     func initialize(with monitoringService: UPSMonitoringService) {
@@ -58,26 +58,28 @@ class ReportSchedulerService: ObservableObject {
     // MARK: - Scheduler Management
     
     private func startScheduler() {
-        guard NotificationService.shared.emailNotificationsEnabled else { return }
+        guard NotificationService.shared.emailNotificationsEnabled else { 
+            return 
+        }
         
         // Stop existing timer
         stopScheduler()
         
-        // Start new timer that checks every minute
-        schedulerTimer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+        // Start new timer that checks every 5 minutes instead of every minute
+        schedulerTimer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] timer in
+            guard let self = self else { 
+                return 
+            }
+            
             Task { @MainActor in
                 await self.checkAndSendScheduledReports()
             }
         }
-        
-        print("📅 Report scheduler started - checking every \(Int(checkInterval)) seconds")
     }
     
     private func stopScheduler() {
         schedulerTimer?.invalidate()
         schedulerTimer = nil
-        print("📅 Report scheduler stopped")
     }
     
     // MARK: - Report Checking Logic
@@ -113,12 +115,17 @@ class ReportSchedulerService: ObservableObject {
         let hour = calendar.component(.hour, from: date)
         let minute = calendar.component(.minute, from: date)
         
-        // Check if it's 8:00 AM (within the check interval)
-        guard hour == 8 && minute < Int(checkInterval / 60) else { return false }
+        // Check for 8 AM with 5-minute window instead of 1-minute
+        guard hour == 8 && minute < Int(checkInterval / 60) else {
+            return false
+        }
         
         // Check if we haven't sent a daily report today
         if let lastSent = lastDailyReportDate {
-            return !calendar.isDate(lastSent, inSameDayAs: date)
+            let isSameDay = calendar.isDate(lastSent, inSameDayAs: date)
+            if isSameDay {
+                return false
+            }
         }
         
         return true
@@ -130,7 +137,7 @@ class ReportSchedulerService: ObservableObject {
         let hour = calendar.component(.hour, from: date)
         let minute = calendar.component(.minute, from: date)
         
-        // Check if it's Monday (weekday 2) at 8:00 AM
+        // Check if it's Monday at 8:00 AM with 5-minute window
         guard weekday == 2 && hour == 8 && minute < Int(checkInterval / 60) else { return false }
         
         // Check if we haven't sent a weekly report this week
@@ -152,7 +159,7 @@ class ReportSchedulerService: ObservableObject {
         let hour = calendar.component(.hour, from: date)
         let minute = calendar.component(.minute, from: date)
         
-        // Check if it's the 1st of the month at 8:00 AM
+        // Check if it's the 1st of the month at 8:00 AM with 5-minute window
         guard day == 1 && hour == 8 && minute < Int(checkInterval / 60) else { return false }
         
         // Check if we haven't sent a monthly report this month
@@ -172,7 +179,6 @@ class ReportSchedulerService: ObservableObject {
     
     private func sendDailyReport() {
         guard let monitoringService = monitoringService else {
-            print("❌ Cannot send daily report: monitoring service not initialized")
             return
         }
         
@@ -183,13 +189,10 @@ class ReportSchedulerService: ObservableObject {
         
         lastDailyReportDate = Date()
         saveReportHistory()
-        
-        print("📧 Daily UPS report sent at \(Date().formatted())")
     }
     
     private func sendWeeklyReport() {
         guard let monitoringService = monitoringService else {
-            print("❌ Cannot send weekly report: monitoring service not initialized")
             return
         }
         
@@ -200,13 +203,10 @@ class ReportSchedulerService: ObservableObject {
         
         lastWeeklyReportDate = Date()
         saveReportHistory()
-        
-        print("📧 Weekly UPS report sent at \(Date().formatted())")
     }
     
     private func sendMonthlyReport() {
         guard let monitoringService = monitoringService else {
-            print("❌ Cannot send monthly report: monitoring service not initialized")
             return
         }
         
@@ -217,8 +217,6 @@ class ReportSchedulerService: ObservableObject {
         
         lastMonthlyReportDate = Date()
         saveReportHistory()
-        
-        print("📧 Monthly UPS report sent at \(Date().formatted())")
     }
     
     // MARK: - Manual Report Sending (for testing)
@@ -230,27 +228,45 @@ class ReportSchedulerService: ObservableObject {
         let statusData = monitoringService.statusData
         
         NotificationService.shared.sendDailyReport(devices, statusData: statusData)
-        print("📧 Test daily report sent")
+    }
+    
+    // Add method to force send daily report regardless of schedule
+    func forceSendDailyReport() {
+        sendDailyReport()
     }
     
     func sendTestWeeklyReport() {
-        guard let monitoringService = monitoringService else { return }
+        guard let monitoringService = monitoringService else { 
+            return 
+        }
         
         let devices = monitoringService.devices.filter { $0.isEnabled }
         let statusData = monitoringService.statusData
         
-        NotificationService.shared.sendWeeklyReport(devices, statusData: statusData)
-        print("📧 Test weekly report sent")
+        // Bypass the settings check by calling EmailTemplateService directly
+        let reportMessage = EmailTemplateService.createStatusReport(
+            devices: devices,
+            statusData: statusData,
+            reportType: .weekly
+        )
+        MailjetService.shared.queueEmail(reportMessage)
     }
     
     func sendTestMonthlyReport() {
-        guard let monitoringService = monitoringService else { return }
+        guard let monitoringService = monitoringService else { 
+            return 
+        }
         
         let devices = monitoringService.devices.filter { $0.isEnabled }
         let statusData = monitoringService.statusData
         
-        NotificationService.shared.sendMonthlyReport(devices, statusData: statusData)
-        print("📧 Test monthly report sent")
+        // Bypass the settings check by calling EmailTemplateService directly
+        let reportMessage = EmailTemplateService.createStatusReport(
+            devices: devices,
+            statusData: statusData,
+            reportType: .monthly
+        )
+        MailjetService.shared.queueEmail(reportMessage)
     }
     
     // MARK: - Report History Management

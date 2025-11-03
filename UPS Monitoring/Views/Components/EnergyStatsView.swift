@@ -515,12 +515,17 @@ struct EnergyStatsView: View {
                     LiquidGlassButton("Export CSV", icon: "square.and.arrow.up", style: .secondary) {
                         exportData()
                     }
+                    
+                    // DEBUG: Add debug button
+                    LiquidGlassButton("Debug Stats", icon: "ladybug", style: .secondary) {
+                        debugPrintStats()
+                    }
                 }
                 
                 VStack(spacing: 12) {
                     StatRow(
                         title: "Total Runtime",
-                        value: formatDuration(getTotalRuntime()),
+                        value: formatDuration(getTotalAllTimeRuntime()),
                         icon: "clock"
                     )
                     
@@ -553,7 +558,7 @@ struct EnergyStatsView: View {
                         
                         StatRow(
                             title: "Uptime",
-                            value: String(format: "%.1f hours", metrics.uptimeHours),
+                            value: String(format: "%.1f hours", getAllTimeUptimeHours()),
                             icon: "checkmark.circle"
                         )
                     }
@@ -680,8 +685,18 @@ struct EnergyStatsView: View {
         return energyMetrics?.averageLoad ?? 0
     }
     
-    private func getTotalRuntime() -> TimeInterval {
-        return Double(energyMetrics?.uptimeMinutes ?? 0) * 60 // Convert minutes to seconds
+    private func getTotalAllTimeRuntime() -> TimeInterval {
+        // Get ALL statistics regardless of time range for historical totals
+        let allStats = dataService.fetchDeviceStatistics(for: device.id, since: Date.distantPast)
+        let totalUptimeMinutes = allStats.reduce(0) { $0 + $1.uptimeMinutes }
+        return Double(totalUptimeMinutes) * 60 // Convert minutes to seconds
+    }
+    
+    private func getAllTimeUptimeHours() -> Double {
+        // Get ALL statistics regardless of time range for historical totals  
+        let allStats = dataService.fetchDeviceStatistics(for: device.id, since: Date.distantPast)
+        let totalUptimeMinutes = allStats.reduce(0) { $0 + $1.uptimeMinutes }
+        return Double(totalUptimeMinutes) / 60.0 // Convert minutes to hours
     }
     
     private func calculateDailyAverage() -> Double {
@@ -730,6 +745,36 @@ struct EnergyStatsView: View {
             if let fileURL = dataService.exportEnergyData(for: device.id, timeRange: selectedTimeRange) {
                 NSWorkspace.shared.open(fileURL)
             }
+        }
+    }
+    
+    // DEBUG: Add debug method
+    @MainActor
+    private func debugPrintStats() {
+        print("\n🔍 DEBUG STATS for device \(device.id):")
+        print("   - Device name: \(device.name)")
+        
+        let stats = dataService.fetchDeviceStatistics(for: device.id, since: Date().addingTimeInterval(-86400 * 7)) // Last 7 days
+        print("   - Found \(stats.count) daily statistics records")
+        
+        let totalUptime = stats.reduce(0) { $0 + $1.uptimeMinutes }
+        print("   - Total uptime minutes from stats: \(totalUptime)")
+        print("   - Total uptime hours: \(Double(totalUptime) / 60.0)")
+        
+        let samples = dataService.fetchPowerSamples(for: device.id, since: Date().addingTimeInterval(-3600), until: Date()) // Last hour
+        print("   - Found \(samples.count) power samples in last hour")
+        
+        if let metrics = energyMetrics {
+            print("   - Energy metrics uptime minutes: \(metrics.uptimeMinutes)")
+            print("   - Energy metrics uptime hours: \(metrics.uptimeHours)")
+        } else {
+            print("   - No energy metrics available")
+        }
+        
+        // Check if monitoring service is tracking this device
+        if let currentStatus = status {
+            print("   - Current status isOnline: \(currentStatus.isOnline)")
+            print("   - Current status lastUpdate: \(currentStatus.lastUpdate)")
         }
     }
 }

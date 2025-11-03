@@ -1,4 +1,10 @@
+# UPS Monitoring
+
 A powerful macOS application for monitoring UPS (Uninterruptible Power Supply) devices in real-time. Built with SwiftUI and supporting both NUT (Network UPS Tools) and SNMP protocols.
+
+![UPS Monitoring](https://img.shields.io/badge/Platform-macOS-blue.svg)
+![Swift](https://img.shields.io/badge/Swift-5.0-orange.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
 ## Features
 
@@ -47,3 +53,12 @@ The application has been tested with:
 - **Tripp Lite**: SNMP and NUT support
 - **Ubiquiti**: NUT support (with special handling for firmware bugs)
 - **Generic**: Any RFC 1628 compliant SNMP device
+
+## Installation
+
+### Download Release
+1. Download the latest release from the [Releases](https://github.com/yourusername/ups-monitoring/releases) page
+2. Drag `UPS Monitoring.app` to your Applications folder
+3. Launch the application
+
+### Build from Source
