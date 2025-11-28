@@ -387,6 +387,13 @@ struct ContentView: View {
     private var devicesManagementView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                // USB Devices Section
+                USBDeviceListView(
+                    usbMonitor: monitoringService.usbMonitor,
+                    monitoringService: monitoringService,
+                    hoveredCard: $hoveredCard
+                )
+                
                 // Device Management Section
                 LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "device-management") {
                     VStack(alignment: .leading, spacing: 20) {

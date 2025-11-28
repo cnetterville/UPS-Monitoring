@@ -751,6 +751,22 @@ struct MacOSEditDeviceView: View {
     @State private var batteryModel: String
     @State private var batteryNotes: String
     
+    private var isFormValid: Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Name is always required
+        guard !trimmedName.isEmpty else { return false }
+        
+        // For USB devices, host and port are not required
+        if connectionType == .usb {
+            return true
+        }
+        
+        // For network devices (NUT and SNMP), validate host and port
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmedHost.isEmpty && port > 0 && port < 65536
+    }
+    
     init(device: UPSDevice, monitoringService: UPSMonitoringService) {
         self.device = device
         self.monitoringService = monitoringService
@@ -790,7 +806,7 @@ struct MacOSEditDeviceView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(name.isEmpty || host.isEmpty)
+                    .disabled(!isFormValid)
                 }
             }
             .padding(20)
@@ -897,19 +913,36 @@ struct MacOSEditDeviceView: View {
     
     private func updateDevice() {
         var updatedDevice = device
-        updatedDevice.name = name
-        updatedDevice.host = host
-        updatedDevice.port = port
+        updatedDevice.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Only update host and port for network devices (NUT/SNMP)
+        if connectionType != .usb {
+            updatedDevice.host = host.trimmingCharacters(in: .whitespacesAndNewlines)
+            updatedDevice.port = port
+        }
+        
         updatedDevice.connectionType = connectionType
-        updatedDevice.username = username.isEmpty ? nil : username
+        updatedDevice.username = username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : username.trimmingCharacters(in: .whitespacesAndNewlines)
         updatedDevice.password = password.isEmpty ? nil : password
-        updatedDevice.community = connectionType == .snmp ? community : nil
-        updatedDevice.upsName = connectionType == .nut ? upsName : nil
+        updatedDevice.community = connectionType == .snmp ? (community.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : community.trimmingCharacters(in: .whitespacesAndNewlines)) : nil
+        updatedDevice.upsName = connectionType == .nut ? (upsName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : upsName.trimmingCharacters(in: .whitespacesAndNewlines)) : nil
         updatedDevice.batteryInstallDate = batteryInstallDate
-        updatedDevice.batteryModel = batteryModel.isEmpty ? nil : batteryModel
-        updatedDevice.batteryNotes = batteryNotes.isEmpty ? nil : batteryNotes
+        updatedDevice.batteryModel = batteryModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : batteryModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        updatedDevice.batteryNotes = batteryNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : batteryNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        print("📝 Updating device: \(updatedDevice.id)")
+        print("   Type: \(connectionType.rawValue)")
+        print("   Name: '\(device.name)' -> '\(updatedDevice.name)'")
+        if connectionType != .usb {
+            print("   Host: '\(device.host)' -> '\(updatedDevice.host)'")
+            print("   Port: \(device.port) -> \(updatedDevice.port)")
+        } else {
+            print("   Serial: \(updatedDevice.upsName ?? "N/A")")
+        }
         
         monitoringService.updateDevice(updatedDevice)
+        
+        print("✅ Device update completed")
     }
 }
 

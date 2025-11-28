@@ -8,10 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		E9924FE32E7B287B001A0759 /* SwiftSnmpKit in Frameworks */ = {isa = PBXBuildFile; productRef = E9924FE22E7B287B001A0759 /* SwiftSnmpKit */; };
+		E9B9E0D82ED8EDB900E0D2A1 /* USBUPSMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9B9E0D72ED8EDB900E0D2A1 /* USBUPSMonitor.swift */; };
+		E9B9E0DA2ED8EE1200E0D2A1 /* USBDeviceListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9B9E0D92ED8EE1200E0D2A1 /* USBDeviceListView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		E9924FC22E7B2767001A0759 /* UPS Monitoring.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "UPS Monitoring.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E9B9E0D72ED8EDB900E0D2A1 /* USBUPSMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBUPSMonitor.swift; sourceTree = "<group>"; };
+		E9B9E0D92ED8EE1200E0D2A1 /* USBDeviceListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBDeviceListView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -39,6 +43,8 @@
 			children = (
 				E9924FC42E7B2767001A0759 /* UPS Monitoring */,
 				E9924FC32E7B2767001A0759 /* Products */,
+				E9B9E0D72ED8EDB900E0D2A1 /* USBUPSMonitor.swift */,
+				E9B9E0D92ED8EE1200E0D2A1 /* USBDeviceListView.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -128,6 +134,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E9B9E0D82ED8EDB900E0D2A1 /* USBUPSMonitor.swift in Sources */,
+				E9B9E0DA2ED8EE1200E0D2A1 /* USBDeviceListView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

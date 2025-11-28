@@ -27,6 +27,7 @@ struct UPSDevice: Identifiable, Codable {
     enum ConnectionType: String, CaseIterable, Codable {
         case nut = "NUT"
         case snmp = "SNMP"
+        case usb = "USB"
     }
     
     // Computed property for battery age

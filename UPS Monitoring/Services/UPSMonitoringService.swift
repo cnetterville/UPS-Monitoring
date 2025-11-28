@@ -18,6 +18,9 @@ class UPSMonitoringService: ObservableObject {
     @Published var lastRefreshTime: Date? = nil
     @Published var isLoading = false
     
+    // USB UPS Monitoring
+    @Published var usbMonitor: USBUPSMonitor
+    
     private var monitoringTimer: Timer?
     private let updateInterval: TimeInterval = 60.0 // Increased from 30s to 60s for less CPU usage
     private let dataService = DataPersistenceService.shared
@@ -78,7 +81,13 @@ class UPSMonitoringService: ObservableObject {
     }
     
     init() {
+        // Initialize USB monitor
+        usbMonitor = USBUPSMonitor()
+        
         loadDevices()
+        
+        // Clean up any USB devices that were incorrectly added to saved devices
+        cleanupUSBDevices()
         
         // Initialize notification service with this monitoring service
         NotificationService.shared.initialize(with: self)
@@ -88,10 +97,41 @@ class UPSMonitoringService: ObservableObject {
     
     func addDevice(_ device: UPSDevice) {
         devices.append(device)
-        statusData[device.id] = UPSStatus(deviceId: device.id)
+        
+        // For USB devices, copy the current status from usbMonitor if available
+        if device.connectionType == .usb, let serial = device.upsName {
+            if let usbStatus = usbMonitor.usbStatusData[serial] {
+                var newStatus = usbStatus
+                newStatus.upsName = device.name // Use the custom name
+                statusData[device.id] = newStatus
+            } else {
+                statusData[device.id] = UPSStatus(deviceId: device.id)
+            }
+        } else {
+            statusData[device.id] = UPSStatus(deviceId: device.id)
+        }
+        
         saveDevices()
     }
     
+    private func cleanupUSBDevices() {
+        // This function is no longer needed - we now support USB devices properly
+        // Remove any old-style USB devices with "usb://" URLs
+        let legacyUSBDevices = devices.filter { $0.host.starts(with: "usb://") && $0.connectionType != .usb }
+        
+        if !legacyUSBDevices.isEmpty {
+            print("🧹 Cleaning up \(legacyUSBDevices.count) legacy USB device(s)")
+            devices.removeAll { $0.host.starts(with: "usb://") && $0.connectionType != .usb }
+            
+            // Remove their status data too
+            for device in legacyUSBDevices {
+                statusData.removeValue(forKey: device.id)
+                pendingStatusUpdates.removeValue(forKey: device.id)
+            }
+            
+            saveDevices()
+        }
+    }
     func removeDevice(_ device: UPSDevice) {
         devices.removeAll { $0.id == device.id }
         statusData.removeValue(forKey: device.id)
@@ -100,15 +140,36 @@ class UPSMonitoringService: ObservableObject {
     }
     
     func updateDevice(_ device: UPSDevice) {
+        print("🔄 UPSMonitoringService.updateDevice called for device ID: \(device.id)")
+        print("   Looking for device in \(devices.count) devices")
+        
         if let index = devices.firstIndex(where: { $0.id == device.id }) {
+            print("   ✅ Found device at index \(index)")
+            print("   Old name: '\(devices[index].name)'")
+            print("   New name: '\(device.name)'")
+            
             devices[index] = device
             saveDevices()
+            
+            print("   💾 Device updated and saved to UserDefaults")
+            
+            // Force a UI update by manually triggering objectWillChange
+            objectWillChange.send()
+        } else {
+            print("   ❌ ERROR: Device with ID \(device.id) not found in devices array!")
+            print("   Available device IDs:")
+            for (idx, dev) in devices.enumerated() {
+                print("      [\(idx)] ID: \(dev.id), Name: '\(dev.name)'")
+            }
         }
     }
     
     func startMonitoring() {
         guard !isMonitoring else { return }
         isMonitoring = true
+        
+        // Start USB monitoring
+        usbMonitor.startMonitoring()
         
         // Initial update
         Task {
@@ -127,6 +188,9 @@ class UPSMonitoringService: ObservableObject {
         isMonitoring = false
         monitoringTimer?.invalidate()
         monitoringTimer = nil
+        
+        // Stop USB monitoring
+        usbMonitor.stopMonitoring()
     }
     
     func refreshAllDevices() async {
@@ -176,6 +240,8 @@ class UPSMonitoringService: ObservableObject {
                 status = try await queryNUTDevice(device)
             case .snmp:
                 status = try await querySNMPDevice(device)
+            case .usb:
+                status = await queryUSBDevice(device)
             }
             
             // Get previous status for energy calculations
@@ -259,6 +325,40 @@ class UPSMonitoringService: ObservableObject {
         // Save/update device statistics
         dataService.saveDeviceStatistics(deviceId: deviceId, status: status)
     }
+    
+    // MARK: - USB Device Query
+    
+    private func queryUSBDevice(_ device: UPSDevice) async -> UPSStatus {
+        // For USB devices, pull data from the live USB monitor
+        guard let serial = device.upsName else {
+            var status = UPSStatus(deviceId: device.id)
+            status.isOnline = false
+            status.status = "Configuration Error"
+            status.lastUpdate = Date()
+            status.upsName = device.name
+            return status
+        }
+        
+        // Check if the USB device is currently connected
+        if let usbStatus = usbMonitor.usbStatusData[serial] {
+            // USB device is connected and has live data
+            var status = usbStatus
+            status.upsName = device.name // Use the custom name from saved device
+            return status
+        } else {
+            // USB device is not currently connected
+            var status = UPSStatus(deviceId: device.id)
+            status.isOnline = false
+            status.status = "Disconnected"
+            status.lastUpdate = Date()
+            status.upsName = device.name
+            status.manufacturer = usbMonitor.connectedUSBDevices.first(where: { $0.serialNumber == serial })?.manufacturer
+            status.model = usbMonitor.connectedUSBDevices.first(where: { $0.serialNumber == serial })?.model
+            return status
+        }
+    }
+    
+    // MARK: - NUT Device Query
     
     private func queryNUTDevice(_ device: UPSDevice) async throws -> UPSStatus {
         return try await withCheckedThrowingContinuation { continuation in
@@ -1130,6 +1230,10 @@ class UPSMonitoringService: ObservableObject {
     private func saveDevices() {
         if let data = try? JSONEncoder().encode(devices) {
             UserDefaults.standard.set(data, forKey: "UPSDevices")
+            UserDefaults.standard.synchronize() // Force immediate save
+            print("💾 Saved \(devices.count) device(s) to UserDefaults")
+        } else {
+            print("❌ ERROR: Failed to encode devices for saving")
         }
     }
     
