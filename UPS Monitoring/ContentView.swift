@@ -19,19 +19,19 @@ struct ContentView: View {
     @State private var showingDiscovery = false
     @State private var showingQuitConfirmation = false
     @StateObject private var discoveryService = DiscoveryService()
-    
+
     var body: some View {
         ZStack {
             // Liquid glass animated background
             LiquidGlassBackground()
-            
+
             VStack(spacing: 0) {
                 // Header Section
                 headerSection
-                
+
                 // Tab Navigation
                 tabNavigation
-                
+
                 // Main Content Area
                 Group {
                     switch selectedTab {
@@ -54,10 +54,10 @@ struct ContentView: View {
         .onAppear {
             // Set up menu bar manager with monitoring service
             MenuBarManager.shared.setMonitoringService(monitoringService)
-            
+
             // Initialize notification service with monitoring service
             NotificationService.shared.initialize(with: monitoringService)
-            
+
             // Only start monitoring and refresh if we have devices
             if !monitoringService.devices.isEmpty {
                 // Start monitoring first (this will trigger initial refresh)
@@ -89,9 +89,9 @@ struct ContentView: View {
             Text("All monitoring will stop and the app will close.")
         }
     }
-    
+
     // MARK: - Header Section
-    
+
     private var headerSection: some View {
         LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "main-header") {
             HStack {
@@ -108,16 +108,15 @@ struct ContentView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                    
+
                     HStack(spacing: 16) {
                         Text("Real-time device status and management")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        
+
                         if monitoringService.isMonitoring {
                             HStack(spacing: 6) {
                                 Image(systemName: "dot.radiowaves.left.and.right")
-                                    // Removed expensive symbolEffect for better performance
                                     .foregroundStyle(
                                         LinearGradient(
                                             colors: [Color.green, Color.mint],
@@ -126,20 +125,20 @@ struct ContentView: View {
                                         )
                                     )
                                     .font(.caption)
-                                
+
                                 Text("Monitoring Active")
                                     .font(.caption)
                                     .fontWeight(.medium)
                                     .foregroundStyle(.green)
                             }
                         }
-                        
+
                         if let lastRefresh = monitoringService.lastRefreshTime {
                             HStack(spacing: 6) {
                                 Image(systemName: "arrow.clockwise")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
-                                
+
                                 Text("Updated \(lastRefresh, style: .relative)")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
@@ -147,9 +146,9 @@ struct ContentView: View {
                         }
                     }
                 }
-                
+
                 Spacer()
-                
+
                 HStack(spacing: 12) {
                     LiquidGlassButton(
                         "Refresh",
@@ -163,7 +162,7 @@ struct ContentView: View {
                         }
                     }
                     .disabled(isRefreshing || monitoringService.isLoading)
-                    
+
                     LiquidGlassButton(
                         "Quit App",
                         icon: "power",
@@ -176,9 +175,9 @@ struct ContentView: View {
         }
         .padding(20)
     }
-    
+
     // MARK: - Tab Navigation
-    
+
     private var tabNavigation: some View {
         HStack(spacing: 0) {
             tabButton(
@@ -188,7 +187,7 @@ struct ContentView: View {
             ) {
                 selectedTab = "monitoring"
             }
-            
+
             tabButton(
                 title: "Devices",
                 icon: "battery.100percent",
@@ -196,7 +195,7 @@ struct ContentView: View {
             ) {
                 selectedTab = "devices"
             }
-            
+
             tabButton(
                 title: "Notifications",
                 icon: "bell",
@@ -204,13 +203,13 @@ struct ContentView: View {
             ) {
                 selectedTab = "notifications"
             }
-            
+
             Spacer()
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 8)
     }
-    
+
     @ViewBuilder
     private func tabButton(
         title: String,
@@ -236,7 +235,7 @@ struct ContentView: View {
                         )
                     )
                     .frame(width: 16)
-                
+
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(isSelected ? (colorScheme == .dark ? .white : .black) : .secondary)
@@ -282,9 +281,72 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedTab)
     }
-    
+
+    // MARK: - Dashboard Summary
+
+    private var dashboardSummary: some View {
+        let enabledDevices = monitoringService.devices.filter { $0.isEnabled }
+        let statuses = enabledDevices.compactMap { monitoringService.statusData[$0.id] }
+        let onlineCount = statuses.filter { $0.isOnline }.count
+        let offlineCount = enabledDevices.count - onlineCount
+
+        let batteries = statuses.compactMap { $0.batteryCharge }
+        let lowestBattery = batteries.min()
+
+        let loads = statuses.compactMap { $0.load }
+        let highestLoad = loads.max()
+
+        let alertCount = statuses.reduce(0) { count, status in
+            var alerts = 0
+            if let alarms = status.alarmsPresent, alarms > 0 { alerts += alarms }
+            if status.outputSource == "Battery" { alerts += 1 }
+            if let charge = status.batteryCharge, charge < 20 { alerts += 1 }
+            return count + alerts
+        }
+
+        return HStack(spacing: 16) {
+            // Online/Offline
+            DashboardSummaryCard(
+                icon: "checkmark.circle.fill",
+                value: "\(onlineCount)/\(enabledDevices.count)",
+                label: "Online",
+                color: offlineCount > 0 ? .orange : .green
+            )
+
+            // Lowest Battery
+            DashboardSummaryCard(
+                icon: "battery.25",
+                value: lowestBattery.map { "\(Int($0))%" } ?? "--",
+                label: "Lowest Battery",
+                color: {
+                    guard let b = lowestBattery else { return .secondary }
+                    return b > 50 ? .green : b > 20 ? .orange : .red
+                }()
+            )
+
+            // Highest Load
+            DashboardSummaryCard(
+                icon: "gauge.high",
+                value: highestLoad.map { "\(Int($0))%" } ?? "--",
+                label: "Peak Load",
+                color: {
+                    guard let l = highestLoad else { return .secondary }
+                    return l > 80 ? .red : l > 60 ? .orange : .green
+                }()
+            )
+
+            // Active Alerts
+            DashboardSummaryCard(
+                icon: alertCount > 0 ? "exclamationmark.triangle.fill" : "checkmark.shield.fill",
+                value: "\(alertCount)",
+                label: alertCount == 0 ? "All Clear" : "Alert\(alertCount == 1 ? "" : "s")",
+                color: alertCount > 0 ? .red : .green
+            )
+        }
+    }
+
     // MARK: - Monitoring View
-    
+
     private var monitoringView: some View {
         ScrollView {
             LazyVStack(spacing: 20) {
@@ -349,10 +411,12 @@ struct ContentView: View {
                         }
                     }
                 } else {
-                    // Device grid
+                    // Dashboard summary
+                    dashboardSummary
+
+                    // Device grid (adaptive columns based on window width)
                     LazyVGrid(columns: [
-                        GridItem(.flexible(), spacing: 20),
-                        GridItem(.flexible(), spacing: 20)
+                        GridItem(.adaptive(minimum: 380, maximum: 600), spacing: 20)
                     ], spacing: 24) {
                         ForEach(monitoringService.devices) { device in
                             LiquidGlassDeviceCard(
@@ -1483,6 +1547,102 @@ private func statisticsSummary(for status: UPSStatus, device: UPSDevice) -> some
                             .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
                     )
             )
+        }
+    }
+}
+
+// MARK: - Dashboard Summary Card
+
+struct DashboardSummaryCard: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                color.opacity(0.3),
+                                color.opacity(0.1),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 5,
+                            endRadius: 22
+                        )
+                    )
+                    .frame(width: 36, height: 36)
+
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundColor(colorScheme == .dark ? .white : .black)
+                    .monospacedDigit()
+
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .opacity(isHovered ? 0.5 : 0.35)
+
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                color.opacity(isHovered ? 0.08 : 0.04),
+                                color.opacity(0.01)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.15),
+                                color.opacity(0.15)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.8
+                    )
+            }
+        )
+        .scaleEffect(isHovered ? 1.015 : 1.0)
+        .shadow(
+            color: color.opacity(isHovered ? 0.12 : 0.05),
+            radius: isHovered ? 6 : 3,
+            x: 0,
+            y: isHovered ? 3 : 1
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .onHover { hovered in
+            isHovered = hovered
         }
     }
 }

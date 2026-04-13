@@ -114,7 +114,7 @@ class USBUPSMonitor: ObservableObject {
     // MARK: - Device Connection Handling
     
     private func deviceConnected(_ device: IOHIDDevice) {
-        print("🔌 USB UPS device connected")
+        print("🔌 USB UPS device connected via HID callback")
         
         guard let upsDevice = createUSBUPSDevice(from: device) else {
             print("❌ Failed to create USB UPS device")
@@ -125,12 +125,48 @@ class USBUPSMonitor: ObservableObject {
         print("   Serial: \(upsDevice.serialNumber)")
         print("   VID:PID: \(String(format: "%04X", upsDevice.vendorID)):\(String(format: "%04X", upsDevice.productID))")
         
+        // Check if we already have a device with the same name but different serial
+        // (This can happen if Power Source API created it first)
+        if let existingDevice = connectedUSBDevices.first(where: { $0.name == upsDevice.name && $0.serialNumber != upsDevice.serialNumber }) {
+            print("   ⚠️ Found existing device with same name but different serial:")
+            print("      Existing serial: \(existingDevice.serialNumber)")
+            print("      HID serial: \(upsDevice.serialNumber)")
+            print("   ℹ️ Updating existing device to use HID serial")
+            
+            // Remove the old device
+            connectedUSBDevices.removeAll { $0.serialNumber == existingDevice.serialNumber }
+            
+            // Migrate status data from old serial to new serial
+            if let oldStatus = usbStatusData[existingDevice.serialNumber] {
+                usbStatusData[upsDevice.serialNumber] = oldStatus
+                usbStatusData.removeValue(forKey: existingDevice.serialNumber)
+                print("   📦 Migrated status from '\(existingDevice.serialNumber)' to '\(upsDevice.serialNumber)'")
+            }
+        }
+        
+        // Also check for name-only matches (in case device was already added with this exact name)
+        if connectedUSBDevices.first(where: { $0.name == upsDevice.name && $0.serialNumber == upsDevice.serialNumber }) != nil {
+            print("   ℹ️ Device '\(upsDevice.name)' already in list with matching serial")
+            // Device already exists, just update HID reference
+            registeredDevices[upsDevice.serialNumber] = device
+            
+            // Make sure status exists and is marked online
+            if var existingStatus = usbStatusData[upsDevice.serialNumber] {
+                existingStatus.isOnline = true
+                existingStatus.status = existingStatus.status == "Disconnected" ? "Online" : existingStatus.status
+                existingStatus.lastUpdate = Date()
+                usbStatusData[upsDevice.serialNumber] = existingStatus
+            }
+            return
+        }
+        
         // Store the HID device reference
         registeredDevices[upsDevice.serialNumber] = device
         
         // Add to our list if not already present
         if !connectedUSBDevices.contains(where: { $0.serialNumber == upsDevice.serialNumber }) {
             connectedUSBDevices.append(upsDevice)
+            print("   📝 Added to connectedUSBDevices list")
             
             // Create initial status with online flag set
             var status = UPSStatus(deviceId: UUID()) // We'll use serial as key instead
@@ -138,12 +174,16 @@ class USBUPSMonitor: ObservableObject {
             status.model = upsDevice.model
             status.upsName = upsDevice.name
             status.isOnline = true // Mark as online immediately since we just connected
-            status.status = "Connected" // Set initial status
+            status.status = "Online" // Set initial status to Online
             status.lastUpdate = Date()
             usbStatusData[upsDevice.serialNumber] = status
+            print("   💾 Created initial status entry with key: \(upsDevice.serialNumber)")
             
             // Trigger initial update to get real data
             updateDeviceStatus(upsDevice, device: device)
+            print("   🔄 Triggered initial status update")
+        } else {
+            print("   ℹ️ Device already in connectedUSBDevices list")
         }
     }
     
@@ -172,15 +212,24 @@ class USBUPSMonitor: ObservableObject {
     private func createUSBUPSDevice(from hidDevice: IOHIDDevice) -> USBUPSDevice? {
         let manufacturer = getStringProperty(hidDevice, key: kIOHIDManufacturerKey) ?? "Unknown"
         let product = getStringProperty(hidDevice, key: kIOHIDProductKey) ?? "Unknown UPS"
-        let serialNumber = getStringProperty(hidDevice, key: kIOHIDSerialNumberKey) ?? UUID().uuidString
         let vendorID = getIntProperty(hidDevice, key: kIOHIDVendorIDKey) ?? 0
         let productID = getIntProperty(hidDevice, key: kIOHIDProductIDKey) ?? 0
+        
+        // Try to get real serial number, but if it's empty or not available, use a stable identifier
+        var serialNumber = getStringProperty(hidDevice, key: kIOHIDSerialNumberKey)
+        
+        // If serial is nil or empty, create a stable identifier from name + transport
+        if serialNumber == nil || serialNumber?.isEmpty == true {
+            // Use same format as Power Source API for consistency
+            serialNumber = "\(product)_USB"
+            print("   ℹ️ No HID serial available, using stable identifier: \(serialNumber!)")
+        }
         
         return USBUPSDevice(
             name: product,
             manufacturer: manufacturer,
             model: product,
-            serialNumber: serialNumber,
+            serialNumber: serialNumber!,
             vendorID: vendorID,
             productID: productID
         )
@@ -245,10 +294,12 @@ class USBUPSMonitor: ObservableObject {
     private func updateDeviceStatus(_ upsDevice: USBUPSDevice, device: IOHIDDevice) {
         guard var status = usbStatusData[upsDevice.serialNumber] else {
             print("⚠️ No status found for device: \(upsDevice.serialNumber)")
+            print("   Available keys in usbStatusData: \(usbStatusData.keys.joined(separator: ", "))")
             return
         }
         
         print("📊 Updating status for \(upsDevice.name) (\(upsDevice.serialNumber))")
+        print("   Current status: \(status.status), isOnline: \(status.isOnline)")
         
         status.lastUpdate = Date()
         status.isOnline = true
@@ -384,7 +435,7 @@ class USBUPSMonitor: ObservableObject {
         }
         
         // Set default status if not set
-        if status.status == "Unknown" || status.status == "Connected" {
+        if status.status == "Unknown" || status.status == "Connected" || status.status == "Reading data..." {
             if let outputSource = status.outputSource, outputSource == "Battery" {
                 status.status = "On Battery"
             } else {
@@ -392,13 +443,57 @@ class USBUPSMonitor: ObservableObject {
             }
         }
         
+        // Ensure isOnline is set correctly
+        status.isOnline = true
+        
         if hidReadSuccessful {
             print("💾 Final status (from HID): \(status.status), Online: \(status.isOnline), Charge: \(status.batteryCharge ?? -1)%")
         } else {
             print("💾 Final status (will use Power Source API): \(status.status), Online: \(status.isOnline)")
         }
         
+        print("   Saving status to key: \(upsDevice.serialNumber)")
         usbStatusData[upsDevice.serialNumber] = status
+        print("   ✅ Status saved. Dictionary now has \(usbStatusData.count) entries")
+    }
+    
+    // MARK: - Helper Methods
+    
+    /// Find USB status by multiple matching strategies
+    /// This is more resilient to name changes and serial mismatches
+    func findUSBStatus(forDeviceWithSerial serial: String, name: String? = nil, model: String? = nil) -> UPSStatus? {
+        // Strategy 1: Exact serial match (most reliable)
+        if let status = usbStatusData[serial] {
+            print("   ✅ Found USB status by exact serial match: \(serial)")
+            return status
+        }
+        
+        // Strategy 2: Try to find by matching connected device name/model
+        if let name = name {
+            if let connectedDevice = connectedUSBDevices.first(where: { 
+                $0.serialNumber == serial || $0.name == name || $0.model == name 
+            }) {
+                if let status = usbStatusData[connectedDevice.serialNumber] {
+                    print("   ✅ Found USB status by device name match: \(connectedDevice.serialNumber)")
+                    return status
+                }
+            }
+        }
+        
+        // Strategy 3: Try model-based match
+        if let model = model {
+            if let connectedDevice = connectedUSBDevices.first(where: { 
+                $0.model == model && (name == nil || $0.name == name)
+            }) {
+                if let status = usbStatusData[connectedDevice.serialNumber] {
+                    print("   ✅ Found USB status by model match: \(connectedDevice.serialNumber)")
+                    return status
+                }
+            }
+        }
+        
+        print("   ❌ No USB status found for serial: \(serial), name: \(name ?? "nil"), model: \(model ?? "nil")")
+        return nil
     }
     
     // MARK: - Power Source API (Alternative/Supplemental)
@@ -431,7 +526,28 @@ class USBUPSMonitor: ObservableObject {
             let name = description[kIOPSNameKey] as? String ?? "USB UPS"
             let isPresent = description[kIOPSIsPresentKey] as? Bool ?? false
             
+            // Try to extract serial number (various possible keys)
+            // Note: IOKit doesn't provide a standard serial number key for UPS devices via Power Source API
+            // We'll have to rely on the Transport ID or hardware serial if available
+            var serialNumber = description["Serial Number"] as? String
+            if serialNumber == nil {
+                serialNumber = description["Hardware Serial Number"] as? String
+            }
+            if serialNumber == nil {
+                // Try using the transport ID as a fallback unique identifier
+                if let transportID = description[kIOPSTransportTypeKey] as? String {
+                    serialNumber = "\(name)_\(transportID)"
+                }
+            }
+            if serialNumber == nil {
+                // Last resort: use the name as the identifier
+                serialNumber = name
+            }
+            
+            // Debug: Print all available keys to help identify the serial number key
             print("   Found UPS: \(name), Present: \(isPresent)")
+            print("   Available keys: \(description.keys.joined(separator: ", "))")
+            print("   Serial: \(serialNumber ?? "nil")")
             
             guard isPresent else { continue }
             
@@ -449,17 +565,59 @@ class USBUPSMonitor: ObservableObject {
                 chargePercent = Double(capacity) / Double(maxCapacity) * 100.0
             }
             
-            // Try to find matching device by name
+            // Try to find matching device by serial number first, then by name
             var matchedSerial: String?
-            for device in connectedUSBDevices {
-                if device.name == name || device.model == name {
-                    matchedSerial = device.serialNumber
-                    break
+            
+            // First, try to match by serial number if available
+            if let serialNumber = serialNumber {
+                // Check if we already have this device with this exact serial
+                if let existingDevice = connectedUSBDevices.first(where: { $0.serialNumber == serialNumber }) {
+                    matchedSerial = existingDevice.serialNumber
+                    print("   ✅ Matched to existing device by serial: \(matchedSerial!)")
+                } 
+                // Try to match by name (in case HID callback created device with different serial)
+                else if let existingDevice = connectedUSBDevices.first(where: { $0.name == name || $0.model == name }) {
+                    matchedSerial = existingDevice.serialNumber
+                    print("   ✅ Matched to existing device by name (serial mismatch)")
+                    print("      Existing serial: \(existingDevice.serialNumber)")
+                    print("      Power Source serial: \(serialNumber)")
+                }
+                // No existing device found, create a new one
+                else {
+                    let newDevice = USBUPSDevice(
+                        name: name,
+                        manufacturer: "Unknown",
+                        model: name,
+                        serialNumber: serialNumber,
+                        vendorID: 0,
+                        productID: 0
+                    )
+                    connectedUSBDevices.append(newDevice)
+                    matchedSerial = serialNumber
+                    print("   📝 Added UPS to connectedUSBDevices from Power Source API")
+                }
+            } else {
+                // Fallback: Try to match by name
+                for device in connectedUSBDevices {
+                    if device.name == name || device.model == name {
+                        matchedSerial = device.serialNumber
+                        print("   ✅ Matched to existing device by name (no serial available)")
+                        break
+                    }
                 }
             }
             
-            // If we found a match, update its status
-            if let serial = matchedSerial, var status = usbStatusData[serial] {
+            // If we found or created a match, update/create its status
+            if let serial = matchedSerial {
+                var status = usbStatusData[serial] ?? UPSStatus(deviceId: UUID())
+                
+                // Mark as online and set basic info
+                status.isOnline = true
+                status.upsName = name
+                status.manufacturer = status.manufacturer ?? "Unknown"
+                status.model = status.model ?? name
+                status.lastUpdate = Date()
+                
                 print("   📦 Updating device \(serial) from Power Source API")
                 
                 if let chargePercent = chargePercent {
@@ -495,8 +653,9 @@ class USBUPSMonitor: ObservableObject {
                 }
                 
                 usbStatusData[serial] = status
+                print("   ✅ Status saved for serial: \(serial)")
             } else {
-                print("   ⚠️ Could not match UPS '\(name)' to any registered device")
+                print("   ⚠️ Could not determine serial number for UPS '\(name)'")
             }
         }
     }

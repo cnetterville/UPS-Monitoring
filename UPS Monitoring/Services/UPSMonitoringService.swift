@@ -92,7 +92,19 @@ class UPSMonitoringService: ObservableObject {
         // Initialize notification service with this monitoring service
         NotificationService.shared.initialize(with: self)
         
-        // Don't trigger immediate refresh in init - let the UI handle it
+        // Sync USB device status after a brief delay to allow USB discovery
+        Task { @MainActor in
+            // First immediate sync (catches devices already discovered)
+            syncUSBDeviceStatus()
+            
+            // Second sync after a short delay (catches devices discovered during initialization)
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+            syncUSBDeviceStatus()
+            
+            // Third sync after a longer delay (catches slow-to-discover devices)
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            syncUSBDeviceStatus()
+        }
     }
     
     func addDevice(_ device: UPSDevice) {
@@ -100,12 +112,40 @@ class UPSMonitoringService: ObservableObject {
         
         // For USB devices, copy the current status from usbMonitor if available
         if device.connectionType == .usb, let serial = device.upsName {
+            print("🔧 Adding USB device to monitoring. Serial: \(serial)")
+            print("   Available USB status keys: \(usbMonitor.usbStatusData.keys.joined(separator: ", "))")
+            
             if let usbStatus = usbMonitor.usbStatusData[serial] {
-                var newStatus = usbStatus
+                print("   ✅ Found existing status for USB device")
+                // Use the helper method to create a status with the correct deviceId
+                var newStatus = usbStatus.withDeviceId(device.id)
                 newStatus.upsName = device.name // Use the custom name
                 statusData[device.id] = newStatus
             } else {
-                statusData[device.id] = UPSStatus(deviceId: device.id)
+                print("   ⚠️ No existing status found - creating placeholder. Will update on next refresh.")
+                // Create a temporary online status - it will be updated on the next monitoring cycle
+                var initialStatus = UPSStatus(deviceId: device.id)
+                initialStatus.upsName = device.name
+                
+                // Check if the device is in connectedUSBDevices
+                if let connectedDevice = usbMonitor.connectedUSBDevices.first(where: { $0.serialNumber == serial }) {
+                    print("   ℹ️ Device IS connected to USB, marking as online temporarily")
+                    initialStatus.isOnline = true
+                    initialStatus.status = "Connecting..."
+                    initialStatus.manufacturer = connectedDevice.manufacturer
+                    initialStatus.model = connectedDevice.model
+                } else {
+                    print("   ⚠️ Device NOT found in connected USB devices")
+                    initialStatus.isOnline = false
+                    initialStatus.status = "Waiting for connection..."
+                }
+                
+                statusData[device.id] = initialStatus
+                
+                // Trigger an immediate refresh to populate the status
+                Task {
+                    await updateDeviceStatus(device)
+                }
             }
         } else {
             statusData[device.id] = UPSStatus(deviceId: device.id)
@@ -115,7 +155,8 @@ class UPSMonitoringService: ObservableObject {
     }
     
     private func cleanupUSBDevices() {
-        // This function is no longer needed - we now support USB devices properly
+        var needsSave = false
+        
         // Remove any old-style USB devices with "usb://" URLs
         let legacyUSBDevices = devices.filter { $0.host.starts(with: "usb://") && $0.connectionType != .usb }
         
@@ -129,7 +170,31 @@ class UPSMonitoringService: ObservableObject {
                 pendingStatusUpdates.removeValue(forKey: device.id)
             }
             
+            needsSave = true
+        }
+        
+        // Remove USB devices with missing serial numbers (upsName is nil)
+        let brokenUSBDevices = devices.filter { $0.connectionType == .usb && $0.upsName == nil }
+        
+        if !brokenUSBDevices.isEmpty {
+            print("🧹 Cleaning up \(brokenUSBDevices.count) USB device(s) with missing serial numbers")
+            for device in brokenUSBDevices {
+                print("   Removing: \(device.name) (ID: \(device.id))")
+            }
+            devices.removeAll { $0.connectionType == .usb && $0.upsName == nil }
+            
+            // Remove their status data too
+            for device in brokenUSBDevices {
+                statusData.removeValue(forKey: device.id)
+                pendingStatusUpdates.removeValue(forKey: device.id)
+            }
+            
+            needsSave = true
+        }
+        
+        if needsSave {
             saveDevices()
+            print("✅ Cleanup complete. \(devices.count) device(s) remaining")
         }
     }
     func removeDevice(_ device: UPSDevice) {
@@ -144,11 +209,40 @@ class UPSMonitoringService: ObservableObject {
         print("   Looking for device in \(devices.count) devices")
         
         if let index = devices.firstIndex(where: { $0.id == device.id }) {
+            let oldDevice = devices[index]
             print("   ✅ Found device at index \(index)")
-            print("   Old name: '\(devices[index].name)'")
+            print("   Old name: '\(oldDevice.name)'")
             print("   New name: '\(device.name)'")
+            print("   Connection type: \(device.connectionType)")
             
-            devices[index] = device
+            // For USB devices, ensure the upsName (serial) is preserved
+            if device.connectionType == .usb {
+                print("   📱 USB device - checking upsName preservation")
+                print("   Old upsName: '\(oldDevice.upsName ?? "nil")'")
+                print("   New upsName: '\(device.upsName ?? "nil")'")
+                
+                // If the upsName was somehow lost, preserve the old one
+                var updatedDevice = device
+                if device.upsName == nil && oldDevice.upsName != nil {
+                    print("   ⚠️ WARNING: upsName was lost during edit! Preserving old value.")
+                    updatedDevice.upsName = oldDevice.upsName
+                }
+                
+                devices[index] = updatedDevice
+                
+                // Update the status entry to use the custom name while keeping the serial key
+                if updatedDevice.upsName != nil, var status = statusData[updatedDevice.id] {
+                    print("   🔄 Updating status display name from '\(status.upsName ?? "nil")' to '\(updatedDevice.name)'")
+                    status.upsName = updatedDevice.name
+                    statusData[updatedDevice.id] = status
+                }
+                
+                // Trigger immediate sync to refresh the connection
+                syncUSBDeviceStatus()
+            } else {
+                devices[index] = device
+            }
+            
             saveDevices()
             
             print("   💾 Device updated and saved to UserDefaults")
@@ -171,6 +265,9 @@ class UPSMonitoringService: ObservableObject {
         // Start USB monitoring
         usbMonitor.startMonitoring()
         
+        // Sync USB device status on startup
+        syncUSBDeviceStatus()
+        
         // Initial update
         Task {
             await updateAllDevices()
@@ -182,6 +279,56 @@ class UPSMonitoringService: ObservableObject {
                 await self.updateAllDevices()
             }
         }
+    }
+    
+    // Sync USB devices with monitor status
+    private func syncUSBDeviceStatus() {
+        print("🔄 Syncing USB device status...")
+        var updatedCount = 0
+        
+        for device in devices where device.connectionType == .usb {
+            guard let serial = device.upsName else {
+                print("   ⚠️ Device '\(device.name)' has no serial number")
+                continue
+            }
+            
+            print("   🔍 Looking for device '\(device.name)' with serial '\(serial)'")
+            print("      Available USB status keys: \(usbMonitor.usbStatusData.keys.joined(separator: ", "))")
+            
+            // Use the robust matching helper method
+            if let usbStatus = usbMonitor.findUSBStatus(forDeviceWithSerial: serial, name: device.name, model: nil) {
+                print("   ✅ '\(device.name)' - found live status")
+                var status = usbStatus.withDeviceId(device.id)
+                status.upsName = device.name // Use custom display name
+                statusData[device.id] = status
+                updatedCount += 1
+            }
+            // Device is connected but no status yet
+            else if usbMonitor.connectedUSBDevices.contains(where: { 
+                $0.serialNumber == serial || $0.name == device.name || $0.model == device.name 
+            }) {
+                print("   ⏳ '\(device.name)' - device connected, waiting for status")
+                var status = statusData[device.id] ?? UPSStatus(deviceId: device.id)
+                status.isOnline = true
+                status.status = "Connecting..."
+                status.upsName = device.name
+                statusData[device.id] = status
+                updatedCount += 1
+            } else {
+                print("   ❌ '\(device.name)' - device not connected")
+                // Mark as offline if not connected
+                var status = statusData[device.id] ?? UPSStatus(deviceId: device.id)
+                status.isOnline = false
+                status.status = "Disconnected"
+                status.upsName = device.name
+                statusData[device.id] = status
+            }
+        }
+        
+        print("   📊 Synced \(updatedCount) USB device(s)")
+        
+        // Force UI update
+        objectWillChange.send()
     }
     
     func stopMonitoring() {
@@ -331,6 +478,7 @@ class UPSMonitoringService: ObservableObject {
     private func queryUSBDevice(_ device: UPSDevice) async -> UPSStatus {
         // For USB devices, pull data from the live USB monitor
         guard let serial = device.upsName else {
+            print("❌ USB device \(device.name) has no serial number (upsName is nil)")
             var status = UPSStatus(deviceId: device.id)
             status.isOnline = false
             status.status = "Configuration Error"
@@ -339,23 +487,43 @@ class UPSMonitoringService: ObservableObject {
             return status
         }
         
-        // Check if the USB device is currently connected
-        if let usbStatus = usbMonitor.usbStatusData[serial] {
-            // USB device is connected and has live data
-            var status = usbStatus
-            status.upsName = device.name // Use the custom name from saved device
-            return status
-        } else {
-            // USB device is not currently connected
-            var status = UPSStatus(deviceId: device.id)
-            status.isOnline = false
-            status.status = "Disconnected"
-            status.lastUpdate = Date()
-            status.upsName = device.name
-            status.manufacturer = usbMonitor.connectedUSBDevices.first(where: { $0.serialNumber == serial })?.manufacturer
-            status.model = usbMonitor.connectedUSBDevices.first(where: { $0.serialNumber == serial })?.model
+        print("🔍 Querying USB device: \(device.name) (Serial: \(serial))")
+        print("   USB Monitor has \(usbMonitor.usbStatusData.count) status entries")
+        print("   Keys: \(usbMonitor.usbStatusData.keys.joined(separator: ", "))")
+        
+        // Use the new helper method for more robust matching
+        if let usbStatus = usbMonitor.findUSBStatus(forDeviceWithSerial: serial, name: device.name, model: nil) {
+            print("   ✅ Found status data via robust matching")
+            var status = usbStatus.withDeviceId(device.id)
+            status.upsName = device.name // Use the custom display name
+            print("   Status: \(status.status), Online: \(status.isOnline), Charge: \(status.batteryCharge ?? -1)%")
             return status
         }
+        
+        // Check if the device is physically connected but status not yet available
+        if let connectedDevice = usbMonitor.connectedUSBDevices.first(where: {
+            $0.serialNumber == serial || $0.name == device.name || $0.model == device.name
+        }) {
+            print("   ⏳ Device connected but status not populated yet: \(connectedDevice.name)")
+            // Return a temporary "connecting" status
+            var status = UPSStatus(deviceId: device.id)
+            status.isOnline = true
+            status.status = "Reading data..."
+            status.lastUpdate = Date()
+            status.upsName = device.name
+            status.manufacturer = connectedDevice.manufacturer
+            status.model = connectedDevice.model
+            return status
+        }
+        
+        print("   ❌ Device NOT connected")
+        // USB device is not currently connected
+        var status = UPSStatus(deviceId: device.id)
+        status.isOnline = false
+        status.status = "Disconnected"
+        status.lastUpdate = Date()
+        status.upsName = device.name
+        return status
     }
     
     // MARK: - NUT Device Query
@@ -1222,7 +1390,26 @@ class UPSMonitoringService: ObservableObject {
             self.devices = devices
             
             for device in devices {
-                statusData[device.id] = UPSStatus(deviceId: device.id)
+                // For USB devices, check if they're already connected
+                if device.connectionType == .usb, let serial = device.upsName {
+                    // Check if we already have status data from the USB monitor
+                    if let usbStatus = usbMonitor.usbStatusData[serial] {
+                        print("📱 Loading USB device '\(device.name)' - already connected")
+                        var status = usbStatus.withDeviceId(device.id)
+                        status.upsName = device.name
+                        statusData[device.id] = status
+                    } else {
+                        print("📱 Loading USB device '\(device.name)' - status pending")
+                        // Create initial status that will be updated when USB monitor finds it
+                        var initialStatus = UPSStatus(deviceId: device.id)
+                        initialStatus.upsName = device.name
+                        initialStatus.status = "Connecting..."
+                        statusData[device.id] = initialStatus
+                    }
+                } else {
+                    // For NUT/SNMP devices, create empty status
+                    statusData[device.id] = UPSStatus(deviceId: device.id)
+                }
             }
         }
     }

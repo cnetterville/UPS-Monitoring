@@ -59,7 +59,7 @@ struct UPSDevice: Identifiable, Codable {
 struct UPSStatus: Identifiable {
     let id = UUID()
     let deviceId: UUID
-    let timestamp: Date
+    var timestamp: Date
     var isOnline: Bool
     var batteryCharge: Double? // Percentage
     var batteryRuntime: Int? // Minutes
@@ -144,6 +144,41 @@ struct UPSStatus: Identifiable {
         self.isOnline = false
         self.status = "Unknown"
         self.lastUpdate = Date()
+    }
+    
+    /// Create a new status with the same data but a different deviceId
+    func withDeviceId(_ newDeviceId: UUID) -> UPSStatus {
+        var newStatus = UPSStatus(deviceId: newDeviceId)
+        newStatus.timestamp = self.timestamp
+        newStatus.isOnline = self.isOnline
+        newStatus.batteryCharge = self.batteryCharge
+        newStatus.batteryRuntime = self.batteryRuntime
+        newStatus.batteryVoltage = self.batteryVoltage
+        newStatus.batteryTemperature = self.batteryTemperature
+        newStatus.batteryStatus = self.batteryStatus
+        newStatus.isCharging = self.isCharging
+        newStatus.inputVoltage = self.inputVoltage
+        newStatus.inputFrequency = self.inputFrequency
+        newStatus.outputVoltage = self.outputVoltage
+        newStatus.outputFrequency = self.outputFrequency
+        newStatus.outputPower = self.outputPower
+        newStatus.load = self.load
+        newStatus.temperature = self.temperature
+        newStatus.status = self.status
+        newStatus.lastUpdate = self.lastUpdate
+        newStatus.manufacturer = self.manufacturer
+        newStatus.model = self.model
+        newStatus.upsName = self.upsName
+        newStatus.outputSource = self.outputSource
+        newStatus.powerFailures = self.powerFailures
+        newStatus.secondsOnBattery = self.secondsOnBattery
+        newStatus.alarmsPresent = self.alarmsPresent
+        newStatus.cumulativeEnergyWh = self.cumulativeEnergyWh
+        newStatus.averagePowerW = self.averagePowerW
+        newStatus.peakPowerW = self.peakPowerW
+        newStatus.energyTrackingStartDate = self.energyTrackingStartDate
+        newStatus.lastPowerSample = self.lastPowerSample
+        return newStatus
     }
 }
 
