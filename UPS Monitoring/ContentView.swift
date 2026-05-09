@@ -93,86 +93,70 @@ struct ContentView: View {
     // MARK: - Header Section
 
     private var headerSection: some View {
-        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "main-header") {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("UPS Monitoring")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [
-                                    colorScheme == .dark ? Color.white : Color.black,
-                                    Color.blue.opacity(0.8)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("UPS Monitoring")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
 
-                    HStack(spacing: 16) {
-                        Text("Real-time device status and management")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                HStack(spacing: 16) {
+                    Text("Real-time device status and management")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
 
-                        if monitoringService.isMonitoring {
-                            HStack(spacing: 6) {
-                                Image(systemName: "dot.radiowaves.left.and.right")
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [Color.green, Color.mint],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-                                    .font(.caption)
+                    if monitoringService.isMonitoring {
+                        HStack(spacing: 6) {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .foregroundStyle(.green)
+                                .font(.caption)
 
-                                Text("Monitoring Active")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.green)
-                            }
-                        }
-
-                        if let lastRefresh = monitoringService.lastRefreshTime {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-
-                                Text("Updated \(lastRefresh, style: .relative)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text("Monitoring Active")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.green)
                         }
                     }
-                }
 
-                Spacer()
+                    if let lastRefresh = monitoringService.lastRefreshTime {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
 
-                HStack(spacing: 12) {
-                    LiquidGlassButton(
-                        "Refresh",
-                        icon: "arrow.clockwise",
-                        style: .secondary
-                    ) {
-                        isRefreshing = true
-                        Task {
-                            await monitoringService.refreshAllDevices()
-                            isRefreshing = false
+                            Text("Updated \(lastRefresh, style: .relative)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
-                    }
-                    .disabled(isRefreshing || monitoringService.isLoading)
-
-                    LiquidGlassButton(
-                        "Quit App",
-                        icon: "power",
-                        style: .destructive
-                    ) {
-                        showingQuitConfirmation = true
                     }
                 }
             }
+
+            Spacer()
+
+            HStack(spacing: 12) {
+                LiquidGlassButton(
+                    "Refresh",
+                    icon: "arrow.clockwise",
+                    style: .secondary
+                ) {
+                    isRefreshing = true
+                    Task {
+                        await monitoringService.refreshAllDevices()
+                        isRefreshing = false
+                    }
+                }
+                .disabled(isRefreshing || monitoringService.isLoading)
+
+                LiquidGlassButton(
+                    "Quit App",
+                    icon: "power",
+                    style: .destructive
+                ) {
+                    showingQuitConfirmation = true
+                }
+            }
         }
+        .padding(20)
+        .glassEffect(in: RoundedRectangle(cornerRadius: 20))
         .padding(20)
     }
 
@@ -221,62 +205,21 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(
-                        isSelected ?
-                        LinearGradient(
-                            colors: [Color.blue, Color.cyan],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ) :
-                        LinearGradient(
-                            colors: [Color.secondary, Color.secondary.opacity(0.8)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
                     .frame(width: 16)
 
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(isSelected ? (colorScheme == .dark ? .white : .black) : .secondary)
+                    .foregroundColor(isSelected ? .primary : .secondary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(
-                ZStack {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [
-                                                Color.blue.opacity(0.2),
-                                                Color.cyan.opacity(0.1)
-                                            ],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [
-                                                Color.white.opacity(0.3),
-                                                Color.blue.opacity(0.2)
-                                            ],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ),
-                                        lineWidth: 1
-                                    )
-                            )
-                    }
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.accentColor.opacity(0.12))
                 }
-            )
+            }
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedTab)
@@ -475,14 +418,7 @@ struct ContentView: View {
                                 .tracking(0.5)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(
-                                    Capsule()
-                                        .fill(.ultraThinMaterial)
-                                        .overlay(
-                                            Capsule()
-                                                .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
-                                        )
-                                )
+                                .background(.quinary, in: Capsule())
                         }
                         
                         if monitoringService.devices.isEmpty {
@@ -601,9 +537,7 @@ struct DeviceManagementRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingEditDevice = false
     @State private var showingConnectivityTest = false
-    @State private var isHovered = false
-    
-    private var cardId: String { "device-mgmt-\(device.id)" }
+
     private var status: UPSStatus? { monitoringService.statusData[device.id] }
     
     var body: some View {
@@ -612,38 +546,16 @@ struct DeviceManagementRow: View {
             HStack(spacing: 16) {
                 // Animated status indicator
                 ZStack {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 32, height: 32)
-                        .overlay(
-                            Circle()
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.white.opacity(0.3),
-                                            (status?.isOnline == true ? Color.green : Color.red).opacity(0.2)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1
-                                )
-                        )
-                    
                     if monitoringService.isLoading {
                         ProgressView()
                             .controlSize(.mini)
-                            .scaleEffect(0.8)
                     } else {
                         Circle()
                             .fill(status?.isOnline == true ? Color.green : Color.red)
-                            .frame(width: 12, height: 12)
-                            .shadow(
-                                color: (status?.isOnline == true ? Color.green : Color.red).opacity(0.6),
-                                radius: 4
-                            )
+                            .frame(width: 10, height: 10)
                     }
                 }
+                .frame(width: 24, height: 24)
                 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(device.name)
@@ -657,28 +569,8 @@ struct DeviceManagementRow: View {
                             .tracking(0.5)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .fill(.ultraThinMaterial)
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(
-                                                LinearGradient(
-                                                    colors: [Color.blue, Color.cyan],
-                                                    startPoint: .leading,
-                                                    endPoint: .trailing
-                                                ),
-                                                lineWidth: 0.8
-                                            )
-                                    )
-                            )
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color.blue, Color.cyan],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .background(Color.accentColor.opacity(0.1), in: Capsule())
+                            .foregroundStyle(Color.accentColor)
                         
                         Text("\(device.host):\(device.port.formatted(.number.grouping(.never)))")
                             .font(.system(size: 12, design: .monospaced))
@@ -751,50 +643,11 @@ struct DeviceManagementRow: View {
             }
         }
         .padding(20)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.ultraThinMaterial)
-                    .opacity(isHovered ? 0.7 : 0.5)
-                
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(isHovered ? 0.15 : 0.1),
-                                Color.white.opacity(0.02)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(
-                        LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.3),
-                            (status?.isOnline == true ? Color.green : Color.red).opacity(0.2)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                        lineWidth: 1
-                    )
-            }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(.separator.opacity(0.3), lineWidth: 0.5)
         )
-        .scaleEffect(isHovered ? 1.01 : 1.0)
-        .shadow(
-            color: Color.black.opacity(isHovered ? 0.1 : 0.05),
-            radius: isHovered ? 8 : 4,
-            x: 0,
-            y: isHovered ? 4 : 2
-        )
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
-        .onHover { hovered in
-            isHovered = hovered
-            hoveredCard = hovered ? cardId : nil
-        }
         .sheet(isPresented: $showingEditDevice) {
             MacOSEditDeviceView(device: device, monitoringService: monitoringService)
         }
@@ -824,16 +677,6 @@ struct LiquidGlassDeviceCard: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(device.name)
                             .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [
-                                        colorScheme == .dark ? Color.white : Color.black,
-                                        Color.blue.opacity(0.8)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
                         
                         HStack(spacing: 8) {
                             Text(device.connectionType.rawValue)
@@ -842,28 +685,8 @@ struct LiquidGlassDeviceCard: View {
                                 .tracking(0.5)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(
-                                    Capsule()
-                                        .fill(.ultraThinMaterial)
-                                        .overlay(
-                                            Capsule()
-                                                .stroke(
-                                                    LinearGradient(
-                                                        colors: [Color.blue, Color.cyan],
-                                                        startPoint: .leading,
-                                                        endPoint: .trailing
-                                                    ),
-                                                    lineWidth: 1
-                                                )
-                                        )
-                                )
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Color.blue, Color.cyan],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
+                                .background(Color.accentColor.opacity(0.1), in: Capsule())
+                                .foregroundStyle(Color.accentColor)
                             
                             Text(device.host)
                                 .font(.system(size: 11, design: .monospaced))
@@ -901,15 +724,7 @@ struct LiquidGlassDeviceCard: View {
                                 upsInfoSection(for: status)
                             }
                             .padding(16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(.ultraThinMaterial)
-                                    .opacity(0.4)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
-                                    )
-                            )
+                            .background(.quinary, in: RoundedRectangle(cornerRadius: 12))
                         }
                         
                         // Battery section with enhanced glass effect
@@ -1208,10 +1023,7 @@ struct LiquidGlassBatteryView: View {
     let deviceId: UUID
     @Environment(\.colorScheme) private var colorScheme
     @State private var animatedCharge: Double = 0
-    @State private var isHovered = false
-    
-    private var cardId: String { "battery-\(deviceId)" }
-    
+
     private var batteryColor: Color {
         if charge > 50 { return .green }
         else if charge > 20 { return .orange }
@@ -1319,14 +1131,7 @@ struct LiquidGlassBatteryView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                Capsule()
-                                    .stroke(chargingInfo.color.opacity(0.3), lineWidth: 0.8)
-                            )
-                    )
+                    .background(chargingInfo.color.opacity(0.1), in: Capsule())
                 }
                 
                 Spacer()
@@ -1343,58 +1148,16 @@ struct LiquidGlassBatteryView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                Capsule()
-                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 0.8)
-                            )
-                    )
+                    .background(.quinary, in: Capsule())
                 }
             }
         }
         .padding(20)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.ultraThinMaterial)
-                    .opacity(isHovered ? 0.8 : 0.6)
-                
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                batteryColor.opacity(isHovered ? 0.1 : 0.05),
-                                batteryColor.opacity(0.02)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.3),
-                                batteryColor.opacity(0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(.separator.opacity(0.3), lineWidth: 0.5)
         )
-        .scaleEffect(isHovered ? 1.01 : 1.0)
-        .shadow(
-            color: batteryColor.opacity(isHovered ? 0.2 : 0.1),
-            radius: isHovered ? 12 : 8,
-            x: 0,
-            y: isHovered ? 6 : 4
-        )
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isHovered)
         .animation(.easeInOut(duration: 0.8), value: animatedCharge)
         .onAppear {
             animatedCharge = charge
@@ -1403,10 +1166,6 @@ struct LiquidGlassBatteryView: View {
             withAnimation(.easeInOut(duration: 0.6)) {
                 animatedCharge = newValue
             }
-        }
-        .onHover { hovered in
-            isHovered = hovered
-            hoveredCard = hovered ? cardId : nil
         }
     }
 }
@@ -1538,15 +1297,7 @@ private func statisticsSummary(for status: UPSStatus, device: UPSDevice) -> some
                 }
             }
             .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.ultraThinMaterial)
-                    .opacity(0.3)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
-                    )
-            )
+            .background(.quinary, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 }
@@ -1558,36 +1309,17 @@ struct DashboardSummaryCard: View {
     let value: String
     let label: String
     let color: Color
-    @Environment(\.colorScheme) private var colorScheme
-    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                color.opacity(0.3),
-                                color.opacity(0.1),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 5,
-                            endRadius: 22
-                        )
-                    )
-                    .frame(width: 36, height: 36)
-
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(color)
-            }
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
                     .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundColor(colorScheme == .dark ? .white : .black)
                     .monospacedDigit()
 
                 Text(label)
@@ -1601,49 +1333,11 @@ struct DashboardSummaryCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.ultraThinMaterial)
-                    .opacity(isHovered ? 0.5 : 0.35)
-
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                color.opacity(isHovered ? 0.08 : 0.04),
-                                color.opacity(0.01)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.15),
-                                color.opacity(0.15)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 0.8
-                    )
-            }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(.separator.opacity(0.3), lineWidth: 0.5)
         )
-        .scaleEffect(isHovered ? 1.015 : 1.0)
-        .shadow(
-            color: color.opacity(isHovered ? 0.12 : 0.05),
-            radius: isHovered ? 6 : 3,
-            x: 0,
-            y: isHovered ? 3 : 1
-        )
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
-        .onHover { hovered in
-            isHovered = hovered
-        }
     }
 }
 
