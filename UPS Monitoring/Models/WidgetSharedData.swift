@@ -49,8 +49,9 @@ struct WidgetSharedData: Codable {
         }
     }
 
-    static let appGroupID = "group.com.nettervile.ups.monitor"
+    static let appGroupID = "group.netterville.com.ups.monitor"
     static let fileName = "widgetData.json"
+    static let userDefaultsKey = "widgetData"
 
     private static var sharedFileURL: URL? {
         FileManager.default
@@ -59,14 +60,24 @@ struct WidgetSharedData: Codable {
     }
 
     static func load() -> WidgetSharedData? {
-        guard let url = sharedFileURL,
-              let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(WidgetSharedData.self, from: data)
+        if let url = sharedFileURL,
+           let data = try? Data(contentsOf: url),
+           let decoded = try? JSONDecoder().decode(WidgetSharedData.self, from: data) {
+            return decoded
+        }
+        if let defaults = UserDefaults(suiteName: appGroupID),
+           let data = defaults.data(forKey: userDefaultsKey),
+           let decoded = try? JSONDecoder().decode(WidgetSharedData.self, from: data) {
+            return decoded
+        }
+        return nil
     }
 
     func save() {
-        guard let url = Self.sharedFileURL,
-              let data = try? JSONEncoder().encode(self) else { return }
-        try? data.write(to: url, options: .atomic)
+        guard let encoded = try? JSONEncoder().encode(self) else { return }
+        if let url = Self.sharedFileURL {
+            try? encoded.write(to: url, options: .atomic)
+        }
+        UserDefaults(suiteName: Self.appGroupID)?.set(encoded, forKey: Self.userDefaultsKey)
     }
 }
