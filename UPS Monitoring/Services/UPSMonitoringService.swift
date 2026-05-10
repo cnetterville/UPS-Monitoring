@@ -9,6 +9,7 @@ import Foundation
 import Network
 import SwiftSnmpKit
 import Combine
+import WidgetKit
 
 @MainActor
 class UPSMonitoringService: ObservableObject {
@@ -416,12 +417,40 @@ class UPSMonitoringService: ObservableObject {
     
     private func flushPendingStatusUpdates() async {
         guard !pendingStatusUpdates.isEmpty else { return }
-        
+
         // Update all at once to trigger fewer UI updates
         for (deviceId, status) in pendingStatusUpdates {
             statusData[deviceId] = status
         }
         pendingStatusUpdates.removeAll()
+
+        updateWidgetData()
+    }
+
+    private func updateWidgetData() {
+        let deviceDataList = devices.filter(\.isEnabled).map { device -> WidgetDeviceData in
+            let status = statusData[device.id]
+            return WidgetDeviceData(
+                id: device.id,
+                name: device.name,
+                isOnline: status?.isOnline ?? false,
+                batteryCharge: status?.batteryCharge,
+                load: status?.load,
+                formattedRuntime: status?.formattedRuntime,
+                temperature: status?.temperature,
+                outputSource: status?.outputSource,
+                inputVoltage: status?.inputVoltage,
+                outputVoltage: status?.outputVoltage,
+                outputPower: status?.outputPower,
+                alarmsPresent: status?.alarmsPresent,
+                isCharging: status?.isCharging,
+                lastUpdate: status?.lastUpdate ?? Date()
+            )
+        }
+
+        let shared = WidgetSharedData(devices: deviceDataList, lastRefresh: Date())
+        shared.save()
+        WidgetCenter.shared.reloadAllTimelines()
     }
     
     private func updateEnergyTracking(for deviceId: UUID, currentStatus: inout UPSStatus, previousStatus: UPSStatus?) async {
