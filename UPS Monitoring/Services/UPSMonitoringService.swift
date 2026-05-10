@@ -416,13 +416,12 @@ class UPSMonitoringService: ObservableObject {
     }
     
     private func flushPendingStatusUpdates() async {
-        guard !pendingStatusUpdates.isEmpty else { return }
-
-        // Update all at once to trigger fewer UI updates
-        for (deviceId, status) in pendingStatusUpdates {
-            statusData[deviceId] = status
+        if !pendingStatusUpdates.isEmpty {
+            for (deviceId, status) in pendingStatusUpdates {
+                statusData[deviceId] = status
+            }
+            pendingStatusUpdates.removeAll()
         }
-        pendingStatusUpdates.removeAll()
 
         updateWidgetData()
     }
