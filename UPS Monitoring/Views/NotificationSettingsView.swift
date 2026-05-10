@@ -11,6 +11,7 @@ import UserNotifications
 struct NotificationSettingsView: View {
     @StateObject private var notificationService = NotificationService.shared
     @StateObject private var mailjetService = MailjetService.shared
+    @StateObject private var pushoverService = PushoverService.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingSystemPreferences = false
     @State private var hoveredCard: String? = nil
@@ -75,8 +76,19 @@ struct NotificationSettingsView: View {
                         emailReportsSection
                     }
                     
+                    // Pushover Notifications Section
+                    pushoverNotificationsSection
+
+                    if notificationService.pushoverNotificationsEnabled {
+                        pushoverConfigurationSection
+
+                        if pushoverService.isConfigured {
+                            pushoverAlertTypesSection
+                        }
+                    }
+
                     // Test sections
-                    if notificationService.notificationsEnabled || notificationService.emailNotificationsEnabled {
+                    if notificationService.notificationsEnabled || notificationService.emailNotificationsEnabled || notificationService.pushoverNotificationsEnabled {
                         testSection
                     }
                     
@@ -958,6 +970,181 @@ struct NotificationSettingsView: View {
         }
     }
     
+    // MARK: - Pushover Notifications Section
+
+    @ViewBuilder
+    private var pushoverNotificationsSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "pushover-notifications") {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.purple.opacity(0.4),
+                                        Color.indigo.opacity(0.2),
+                                        Color.clear
+                                    ],
+                                    center: .center,
+                                    startRadius: 10,
+                                    endRadius: 30
+                                )
+                            )
+                            .frame(width: 50, height: 50)
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.3),
+                                                Color.purple.opacity(0.2)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                            )
+
+                        Image(systemName: "iphone.radiowaves.left.and.right")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.purple, Color.indigo],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .symbolEffect(.bounce.up, value: hoveredCard == "pushover-notifications")
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Pushover Notifications")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(colorScheme == .dark ? .white : .black)
+
+                        Text("Send push notifications to your mobile devices")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    LiquidGlassToggle(isOn: $notificationService.pushoverNotificationsEnabled)
+                }
+
+                if !pushoverService.isConfigured && notificationService.pushoverNotificationsEnabled {
+                    HStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+
+                        Text("Pushover not configured")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.orange)
+
+                        Spacer()
+                    }
+                    .padding(.top, 8)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var pushoverConfigurationSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "pushover-config") {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Pushover Configuration")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
+
+                    Spacer()
+
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(pushoverService.isConfigured ? .green : .red)
+                            .frame(width: 8, height: 8)
+
+                        Text(pushoverService.isConfigured ? "Configured" : "Not Configured")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(pushoverService.isConfigured ? .green : .red)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Application Token")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
+
+                        SecureField("Enter your Pushover app token", text: $pushoverService.appToken)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14, design: .monospaced))
+                            .padding(10)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("User Key")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
+
+                        SecureField("Enter your Pushover user key", text: $pushoverService.userKey)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14, design: .monospaced))
+                            .padding(10)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+
+                Text("Get your credentials from pushover.net")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var pushoverAlertTypesSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "pushover-alert-types") {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Pushover Alert Types")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(colorScheme == .dark ? .white : .black)
+
+                VStack(spacing: 16) {
+                    EmailAlertToggleRow(
+                        icon: "exclamationmark.triangle.fill",
+                        title: "Critical Alerts",
+                        description: "Device offline, power failures, battery depleted",
+                        isOn: $notificationService.pushoverOnCritical,
+                        accentColor: .red
+                    )
+
+                    EmailAlertToggleRow(
+                        icon: "exclamationmark.circle.fill",
+                        title: "Warning Alerts",
+                        description: "High temperature, high load, power restored",
+                        isOn: $notificationService.pushoverOnWarning,
+                        accentColor: .orange
+                    )
+
+                    EmailAlertToggleRow(
+                        icon: "wrench.and.screwdriver.fill",
+                        title: "Maintenance Alerts",
+                        description: "Battery replacement reminders",
+                        isOn: $notificationService.pushoverOnMaintenance,
+                        accentColor: .blue
+                    )
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var testSection: some View {
         LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "test-section") {
@@ -992,7 +1179,17 @@ struct NotificationSettingsView: View {
                                 notificationService.testEmailNotification()
                             }
                         }
-                        
+
+                        if notificationService.pushoverNotificationsEnabled && pushoverService.isConfigured {
+                            LiquidGlassButton(
+                                "Test Pushover",
+                                icon: "iphone.radiowaves.left.and.right",
+                                style: .primary
+                            ) {
+                                notificationService.testPushoverNotification()
+                            }
+                        }
+
                         Spacer()
                     }
                     

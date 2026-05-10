@@ -576,8 +576,8 @@ class UPSMonitoringService: ObservableObject {
                 }
             }
             
-            // Reduce timeout to 10 seconds to prevent long hangs
-            DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
+            // Timeout to prevent long hangs (15s for slower devices like Ubiquiti)
+            DispatchQueue.global().asyncAfter(deadline: .now() + 15) {
                 connection.cancel()
                 Task {
                     await resumeManager.resumeOnce(.failure(UPSError.timeout), continuation: continuation)

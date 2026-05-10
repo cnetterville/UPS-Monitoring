@@ -10,6 +10,10 @@ import UserNotifications
 import Combine
 import AppKit
 
+private enum PushoverAlertType {
+    case critical, warning, maintenance, test
+}
+
 @MainActor
 class NotificationService: NSObject, ObservableObject {
     static let shared = NotificationService()
@@ -90,6 +94,20 @@ class NotificationService: NSObject, ObservableObject {
         didSet { saveEmailSettings() }
     }
     
+    // Pushover notification settings
+    @Published var pushoverNotificationsEnabled = false {
+        didSet { saveEmailSettings() }
+    }
+    @Published var pushoverOnCritical = true {
+        didSet { saveEmailSettings() }
+    }
+    @Published var pushoverOnWarning = true {
+        didSet { saveEmailSettings() }
+    }
+    @Published var pushoverOnMaintenance = false {
+        didSet { saveEmailSettings() }
+    }
+
     // Report scheduling times
     @Published var dailyReportTime = Date() {
         didSet { saveEmailSettings() }
@@ -128,6 +146,7 @@ class NotificationService: NSObject, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     private let mailjetService = MailjetService.shared
+    private let pushoverService = PushoverService.shared
     
     private override init() {
         // Load preferences from UserDefaults
@@ -160,7 +179,11 @@ class NotificationService: NSObject, ObservableObject {
             "weeklyReportTime": weeklyReportTime,
             "monthlyReportTime": monthlyReportTime,
             "weeklyReportWeekday": weeklyReportWeekday,
-            "monthlyReportDay": monthlyReportDay
+            "monthlyReportDay": monthlyReportDay,
+            "pushoverNotificationsEnabled": pushoverNotificationsEnabled,
+            "pushoverOnCritical": pushoverOnCritical,
+            "pushoverOnWarning": pushoverOnWarning,
+            "pushoverOnMaintenance": pushoverOnMaintenance
         ]
         
         UserDefaults.standard.set(settings, forKey: "emailNotificationSettings")
@@ -220,6 +243,11 @@ class NotificationService: NSObject, ObservableObject {
         
         weeklyReportWeekday = settings["weeklyReportWeekday"] as? Int ?? 2 // Monday
         monthlyReportDay = settings["monthlyReportDay"] as? Int ?? 1 // 1st of month
+
+        pushoverNotificationsEnabled = settings["pushoverNotificationsEnabled"] as? Bool ?? false
+        pushoverOnCritical = settings["pushoverOnCritical"] as? Bool ?? true
+        pushoverOnWarning = settings["pushoverOnWarning"] as? Bool ?? true
+        pushoverOnMaintenance = settings["pushoverOnMaintenance"] as? Bool ?? false
     }
 
     func initialize(with monitoringService: UPSMonitoringService) {
@@ -279,7 +307,7 @@ class NotificationService: NSObject, ObservableObject {
                 if let prevSource = previous.outputSource, let currentSource = statusToCompare.outputSource {
                     if prevSource != "Battery" && currentSource == "Battery" && notifyOnBattery {
                         sendOnBatteryNotification(device: device, status: statusToCompare)
-                        
+
                         // Email notification for power failure
                         if emailNotificationsEnabled && emailOnCritical {
                             let emailMessage = EmailTemplateService.createCriticalAlert(
@@ -290,13 +318,17 @@ class NotificationService: NSObject, ObservableObject {
                             )
                             mailjetService.queueEmail(emailMessage)
                         }
+
+                        sendPushover(title: "Power Failure - \(device.name)", message: "UPS switched to battery power. Battery: \(Int(statusToCompare.batteryCharge ?? 0))%. Runtime: \(statusToCompare.formattedRuntime ?? "Unknown")", priority: .high, alertType: .critical)
                     } else if prevSource == "Battery" && currentSource != "Battery" && notifyOnPowerRestored {
                         sendPowerRestoredNotification(device: device, status: statusToCompare)
-                        
+
                         // Email notification for power restored
                         if emailNotificationsEnabled && emailOnWarning {
                             sendPowerRestoredEmail(device: device, status: statusToCompare)
                         }
+
+                        sendPushover(title: "Power Restored - \(device.name)", message: "UPS returned to line power. Battery: \(Int(statusToCompare.batteryCharge ?? 0))%", alertType: .warning)
                     }
                 }
                 
@@ -308,7 +340,7 @@ class NotificationService: NSObject, ObservableObject {
                     // Send notification if we just crossed the threshold (going down)
                     if prevCharge > lowBatteryThreshold && currentCharge <= lowBatteryThreshold {
                         sendLowBatteryNotification(device: device, status: statusToCompare)
-                        
+
                         // Email notification for low battery
                         if emailNotificationsEnabled && emailOnCritical {
                             let emailMessage = EmailTemplateService.createCriticalAlert(
@@ -319,6 +351,8 @@ class NotificationService: NSObject, ObservableObject {
                             )
                             mailjetService.queueEmail(emailMessage)
                         }
+
+                        sendPushover(title: "Low Battery - \(device.name)", message: "Battery dropped to \(Int(currentCharge))%. Runtime: \(statusToCompare.formattedRuntime ?? "Unknown")", priority: .high, alertType: .critical)
                     }
                 }
                 
@@ -336,6 +370,8 @@ class NotificationService: NSObject, ObservableObject {
                             )
                             mailjetService.queueEmail(emailMessage)
                         }
+
+                        sendPushover(title: "High Temperature - \(device.name)", message: "Temperature reached \(Int(currentTemp))°C (normal: 20-35°C)", alertType: .warning)
                     }
                 }
                 
@@ -353,6 +389,8 @@ class NotificationService: NSObject, ObservableObject {
                             )
                             mailjetService.queueEmail(emailMessage)
                         }
+
+                        sendPushover(title: "High Load - \(device.name)", message: "Load reached \(Int(currentLoad))% (recommended max: 80%)", alertType: .warning)
                     }
                 }
                 
@@ -363,7 +401,7 @@ class NotificationService: NSObject, ObservableObject {
                     
                     if prevAlarms == 0 && currentAlarms > 0 {
                         sendCriticalAlarmNotification(device: device, status: statusToCompare)
-                        
+
                         // Email notification for critical alarms
                         if emailNotificationsEnabled && emailOnCritical {
                             let emailMessage = EmailTemplateService.createCriticalAlert(
@@ -374,6 +412,8 @@ class NotificationService: NSObject, ObservableObject {
                             )
                             mailjetService.queueEmail(emailMessage)
                         }
+
+                        sendPushover(title: "Critical Alarm - \(device.name)", message: "\(currentAlarms) active alarm(s). Check the device immediately.", priority: .high, alertType: .critical)
                     }
                 }
                 
@@ -414,7 +454,9 @@ class NotificationService: NSObject, ObservableObject {
                             details: "The battery was installed on \(device.batteryInstallDate?.formatted(date: .long, time: .omitted) ?? "Unknown date") and is now \(ageInYears) years old. Consider scheduling a replacement to ensure continued reliable operation."
                         )
                         mailjetService.queueEmail(emailMessage)
-                        
+
+                        sendPushover(title: "Battery Maintenance - \(device.name)", message: "Battery is \(ageInYears) years old. Consider scheduling a replacement.", alertType: .maintenance)
+
                         UserDefaults.standard.set(Date(), forKey: "lastBatteryAgingAlert_\(device.id)")
                     }
                 }
@@ -502,6 +544,8 @@ class NotificationService: NSObject, ObservableObject {
                             )
                             self.mailjetService.queueEmail(emailMessage)
                         }
+
+                        self.sendPushover(title: "Device Offline - \(device.name)", message: "Device stopped responding at \(Date().formatted()). Check network connectivity.", priority: .high, alertType: .critical)
                         
                         // Clean up timer
                         self.deviceOfflineTimers.removeValue(forKey: deviceId)
@@ -747,6 +791,34 @@ class NotificationService: NSObject, ObservableObject {
         sendNotification(identifier: "test_notification", content: content)
     }
     
+    private func sendPushover(title: String, message: String, priority: PushoverPriority = .normal, alertType: PushoverAlertType) {
+        guard pushoverNotificationsEnabled && pushoverService.isConfigured else { return }
+
+        switch alertType {
+        case .critical:
+            guard pushoverOnCritical else { return }
+        case .warning:
+            guard pushoverOnWarning else { return }
+        case .maintenance:
+            guard pushoverOnMaintenance else { return }
+        case .test:
+            break
+        }
+
+        pushoverService.queueNotification(title: title, message: message, priority: priority)
+    }
+
+    func testPushoverNotification() {
+        Task {
+            do {
+                try await pushoverService.sendTestNotification()
+                print("Pushover test sent successfully")
+            } catch {
+                print("Pushover test failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func testEmailNotification() {
         Task {
             do {

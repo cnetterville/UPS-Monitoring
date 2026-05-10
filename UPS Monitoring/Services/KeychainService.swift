@@ -183,5 +183,6 @@ extension KeychainService {
         // Add more keys as needed for other sensitive data
         static let smtpPassword = "smtp_password"
         static let pushoverToken = "pushover_token"
+        static let pushoverUserKey = "pushover_user_key"
     }
 }
