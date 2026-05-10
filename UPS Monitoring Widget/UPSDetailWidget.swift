@@ -2,7 +2,7 @@
 //  UPSDetailWidget.swift
 //  UPS Monitoring Widget
 //
-//  Medium widget showing detailed status for the most critical device.
+//  Medium widget showing top UPS devices in a compact list.
 //
 
 import WidgetKit
@@ -10,117 +10,66 @@ import SwiftUI
 
 struct UPSDetailProvider: TimelineProvider {
     func placeholder(in context: Context) -> UPSDetailEntry {
-        UPSDetailEntry(date: Date(), device: nil)
+        UPSDetailEntry(date: Date(), data: nil)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (UPSDetailEntry) -> Void) {
-        let device = WidgetSharedData.load()?.devices.sorted(by: prioritySort).first
-        completion(UPSDetailEntry(date: Date(), device: device))
+        completion(UPSDetailEntry(date: Date(), data: WidgetSharedData.load()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<UPSDetailEntry>) -> Void) {
-        let device = WidgetSharedData.load()?.devices.sorted(by: prioritySort).first
-        let entry = UPSDetailEntry(date: Date(), device: device)
+        let entry = UPSDetailEntry(date: Date(), data: WidgetSharedData.load())
         let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
         completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
-    }
-
-    private func prioritySort(_ a: WidgetDeviceData, _ b: WidgetDeviceData) -> Bool {
-        if !a.isOnline && b.isOnline { return true }
-        if a.isOnline && !b.isOnline { return false }
-        let aCharge = a.batteryCharge ?? 100
-        let bCharge = b.batteryCharge ?? 100
-        return aCharge < bCharge
     }
 }
 
 struct UPSDetailEntry: TimelineEntry {
     let date: Date
-    let device: WidgetDeviceData?
+    let data: WidgetSharedData?
 }
 
 struct UPSDetailWidgetView: View {
     let entry: UPSDetailEntry
 
     var body: some View {
-        if let device = entry.device {
-            deviceView(device)
+        if let data = entry.data, !data.devices.isEmpty {
+            detailView(data)
         } else {
             emptyView
         }
     }
 
     @ViewBuilder
-    private func deviceView(_ device: WidgetDeviceData) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(device.name)
-                        .font(.system(size: 14, weight: .bold))
-                        .lineLimit(1)
+    private func detailView(_ data: WidgetSharedData) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: "bolt.shield.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.blue.gradient)
 
-                    Text(device.outputSource == "Battery" ? "On Battery" : device.isOnline ? "Online" : "Offline")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(statusColor(device))
-                }
+                Text("UPS Monitor")
+                    .font(.system(size: 11, weight: .bold))
 
                 Spacer()
 
                 Circle()
-                    .fill(statusColor(device))
-                    .frame(width: 10, height: 10)
-                    .shadow(color: statusColor(device).opacity(0.5), radius: 4)
+                    .fill(data.onlineCount == data.totalCount ? Color.green : Color.orange)
+                    .frame(width: 6, height: 6)
+
+                Text("\(data.onlineCount)/\(data.totalCount) Online")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
 
-            Spacer(minLength: 8)
-
-            HStack(spacing: 16) {
-                gaugeView(
-                    value: device.batteryCharge ?? 0,
-                    icon: "battery.100",
-                    label: "Battery",
-                    color: batteryColor(device.batteryCharge ?? 0)
-                )
-
-                gaugeView(
-                    value: device.load ?? 0,
-                    icon: "bolt.fill",
-                    label: "Load",
-                    color: loadColor(device.load ?? 0)
-                )
-
-                VStack(spacing: 4) {
-                    Image(systemName: "clock.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.cyan)
-
-                    Text(device.formattedRuntime ?? "--")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-
-                    Text("Runtime")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
+            ForEach(data.devices.prefix(4)) { device in
+                deviceRow(device)
             }
 
-            Spacer(minLength: 8)
-
-            HStack(spacing: 0) {
-                if let inputV = device.inputVoltage {
-                    metricPill(label: "In", value: "\(Int(inputV))V")
-                }
-                if let outputV = device.outputVoltage {
-                    metricPill(label: "Out", value: "\(Int(outputV))V")
-                }
-                if let temp = device.temperature {
-                    metricPill(label: "Temp", value: "\(Int(temp))°C")
-                }
-                if let power = device.outputPower {
-                    metricPill(label: "Power", value: "\(Int(power))W")
-                }
+            if data.devices.count > 4 {
+                Text("+\(data.devices.count - 4) more")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.tertiary)
             }
         }
         .containerBackground(for: .widget) {
@@ -129,39 +78,55 @@ struct UPSDetailWidgetView: View {
     }
 
     @ViewBuilder
-    private func gaugeView(value: Double, icon: String, label: String, color: Color) -> some View {
-        VStack(spacing: 4) {
-            ZStack {
-                Circle()
-                    .stroke(color.opacity(0.2), lineWidth: 4)
+    private func deviceRow(_ device: WidgetDeviceData) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(statusColor(device))
+                .frame(width: 7, height: 7)
 
-                Circle()
-                    .trim(from: 0, to: min(value / 100, 1.0))
-                    .stroke(color.gradient, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+            Text(device.name)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
 
-                Text("\(Int(value))%")
+            Spacer(minLength: 4)
+
+            HStack(spacing: 2) {
+                Image(systemName: batteryIcon(device.batteryCharge ?? 0))
+                    .font(.system(size: 9))
+                    .foregroundStyle(batteryColor(device.batteryCharge ?? 0))
+
+                Text("\(Int(device.batteryCharge ?? 0))%")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
             }
-            .frame(width: 44, height: 44)
+            .frame(width: 54, alignment: .trailing)
 
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
+            HStack(spacing: 2) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(loadColor(device.load ?? 0))
 
-    @ViewBuilder
-    private func metricPill(label: String, value: String) -> some View {
-        VStack(spacing: 1) {
-            Text(value)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-            Text(label)
-                .font(.system(size: 8, weight: .medium))
-                .foregroundStyle(.tertiary)
+                Text("\(Int(device.load ?? 0))%")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+            }
+            .frame(width: 40, alignment: .trailing)
+
+            HStack(spacing: 2) {
+                Image(systemName: "clock")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.cyan)
+
+                Text(device.formattedRuntime ?? "--")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .lineLimit(1)
+            }
+            .frame(width: 62, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(statusColor(device).opacity(0.06))
+        )
     }
 
     private var emptyView: some View {
@@ -189,6 +154,15 @@ struct UPSDetailWidgetView: View {
         return .green
     }
 
+    private func batteryIcon(_ charge: Double) -> String {
+        switch charge {
+        case 75...: return "battery.100"
+        case 50..<75: return "battery.75"
+        case 25..<50: return "battery.50"
+        default: return "battery.25"
+        }
+    }
+
     private func batteryColor(_ charge: Double) -> Color {
         switch charge {
         case 50...: return .green
@@ -214,7 +188,7 @@ struct UPSDetailWidget: Widget {
             UPSDetailWidgetView(entry: entry)
         }
         .configurationDisplayName("UPS Device")
-        .description("Detailed status of your most critical UPS device.")
+        .description("Top UPS devices at a glance.")
         .supportedFamilies([.systemMedium])
     }
 }
@@ -222,5 +196,11 @@ struct UPSDetailWidget: Widget {
 #Preview(as: .systemMedium) {
     UPSDetailWidget()
 } timeline: {
-    UPSDetailEntry(date: Date(), device: WidgetDeviceData(id: UUID(), name: "Server Room UPS", isOnline: true, batteryCharge: 98, load: 32, formattedRuntime: "45 min", temperature: 28, outputSource: "Normal", inputVoltage: 120, outputVoltage: 120, outputPower: 384, alarmsPresent: 0, isCharging: false, lastUpdate: Date()))
+    UPSDetailEntry(date: Date(), data: WidgetSharedData(
+        devices: [
+            WidgetDeviceData(id: UUID(), name: "Server Room UPS", isOnline: true, batteryCharge: 98, load: 32, formattedRuntime: "45 min", temperature: 28, outputSource: "Normal", inputVoltage: 120, outputVoltage: 120, outputPower: 384, alarmsPresent: 0, isCharging: false, lastUpdate: Date()),
+            WidgetDeviceData(id: UUID(), name: "Network Closet", isOnline: true, batteryCharge: 95, load: 28, formattedRuntime: "52 min", temperature: 26, outputSource: "Normal", inputVoltage: 121, outputVoltage: 120, outputPower: 280, alarmsPresent: 0, isCharging: false, lastUpdate: Date())
+        ],
+        lastRefresh: Date()
+    ))
 }

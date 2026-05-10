@@ -93,7 +93,7 @@ struct UPSOverviewWidgetView: View {
 
     @ViewBuilder
     private func deviceRow(_ device: WidgetDeviceData) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Circle()
                 .fill(statusColor(device))
                 .frame(width: 7, height: 7)
@@ -102,44 +102,38 @@ struct UPSOverviewWidgetView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
 
-            Spacer()
+            Spacer(minLength: 4)
 
-            if let charge = device.batteryCharge {
-                HStack(spacing: 3) {
-                    Image(systemName: batteryIcon(charge))
-                        .font(.system(size: 9))
-                        .foregroundStyle(batteryColor(charge))
+            HStack(spacing: 2) {
+                Image(systemName: batteryIcon(device.batteryCharge ?? 0))
+                    .font(.system(size: 9))
+                    .foregroundStyle(batteryColor(device.batteryCharge ?? 0))
 
-                    Text("\(Int(charge))%")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                }
-                .frame(width: 48, alignment: .trailing)
+                Text("\(Int(device.batteryCharge ?? 0))%")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
             }
+            .frame(width: 54, alignment: .trailing)
 
-            if let load = device.load {
-                HStack(spacing: 3) {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(loadColor(load))
+            HStack(spacing: 2) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(loadColor(device.load ?? 0))
 
-                    Text("\(Int(load))%")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                }
-                .frame(width: 44, alignment: .trailing)
+                Text("\(Int(device.load ?? 0))%")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
             }
+            .frame(width: 40, alignment: .trailing)
 
-            if let runtime = device.formattedRuntime {
-                HStack(spacing: 3) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.cyan)
+            HStack(spacing: 2) {
+                Image(systemName: "clock")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.cyan)
 
-                    Text(runtime)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .lineLimit(1)
-                }
-                .frame(width: 52, alignment: .trailing)
+                Text(device.formattedRuntime ?? "--")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .lineLimit(1)
             }
+            .frame(width: 62, alignment: .trailing)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
