@@ -50,16 +50,23 @@ struct WidgetSharedData: Codable {
     }
 
     static let appGroupID = "group.com.nettervile.ups.monitor"
-    static let userDefaultsKey = "widgetData"
+    static let fileName = "widgetData.json"
+
+    private static var sharedFileURL: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
+            .appendingPathComponent(fileName)
+    }
 
     static func load() -> WidgetSharedData? {
-        guard let defaults = UserDefaults(suiteName: appGroupID),
-              let data = defaults.data(forKey: userDefaultsKey) else { return nil }
+        guard let url = sharedFileURL,
+              let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(WidgetSharedData.self, from: data)
     }
 
     func save() {
-        guard let data = try? JSONEncoder().encode(self) else { return }
-        UserDefaults(suiteName: Self.appGroupID)?.set(data, forKey: Self.userDefaultsKey)
+        guard let url = Self.sharedFileURL,
+              let data = try? JSONEncoder().encode(self) else { return }
+        try? data.write(to: url, options: .atomic)
     }
 }
