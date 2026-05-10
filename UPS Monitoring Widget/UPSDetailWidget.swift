@@ -71,6 +71,15 @@ struct UPSDetailWidgetView: View {
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.tertiary)
             }
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Spacer()
+                Text("Updated \(entry.date.formatted(date: .omitted, time: .shortened))")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .containerBackground(for: .widget) {
             Color(.windowBackgroundColor).opacity(0.5)
