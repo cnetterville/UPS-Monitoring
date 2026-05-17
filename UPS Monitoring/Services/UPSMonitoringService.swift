@@ -90,6 +90,11 @@ class UPSMonitoringService: ObservableObject {
         // Clean up any USB devices that were incorrectly added to saved devices
         cleanupUSBDevices()
         
+        // Subscribe to iCloud external changes — cloud wins.
+        ICloudSyncService.shared.onRemoteDevicesChanged = { [weak self] cloudDevices in
+            self?.applyDevicesFromCloud(cloudDevices)
+        }
+        
         // Initialize notification service with this monitoring service
         NotificationService.shared.initialize(with: self)
         
@@ -1413,31 +1418,53 @@ class UPSMonitoringService: ObservableObject {
     }
 
     private func loadDevices() {
-        if let data = UserDefaults.standard.data(forKey: "UPSDevices"),
-           let devices = try? JSONDecoder().decode([UPSDevice].self, from: data) {
-            self.devices = devices
-            
-            for device in devices {
-                // For USB devices, check if they're already connected
-                if device.connectionType == .usb, let serial = device.upsName {
-                    // Check if we already have status data from the USB monitor
-                    if let usbStatus = usbMonitor.usbStatusData[serial] {
-                        print("📱 Loading USB device '\(device.name)' - already connected")
-                        var status = usbStatus.withDeviceId(device.id)
-                        status.upsName = device.name
-                        statusData[device.id] = status
-                    } else {
-                        print("📱 Loading USB device '\(device.name)' - status pending")
-                        // Create initial status that will be updated when USB monitor finds it
-                        var initialStatus = UPSStatus(deviceId: device.id)
-                        initialStatus.upsName = device.name
-                        initialStatus.status = "Connecting..."
-                        statusData[device.id] = initialStatus
-                    }
+        // Favor iCloud: if the cloud has a device list, use it and write through
+        // to local. Otherwise fall back to local and push it up so other
+        // machines can pick it up.
+        let cloudDevices = ICloudSyncService.shared.loadDevices()
+        let localDevices: [UPSDevice]? = {
+            guard let data = UserDefaults.standard.data(forKey: "UPSDevices") else { return nil }
+            return try? JSONDecoder().decode([UPSDevice].self, from: data)
+        }()
+        
+        let resolvedDevices: [UPSDevice]
+        if let cloudDevices = cloudDevices {
+            print("☁️ Using \(cloudDevices.count) device(s) from iCloud")
+            resolvedDevices = cloudDevices
+            // Mirror cloud value into local UserDefaults so subsequent reads are consistent.
+            if let data = try? JSONEncoder().encode(cloudDevices) {
+                UserDefaults.standard.set(data, forKey: "UPSDevices")
+            }
+        } else if let localDevices = localDevices {
+            print("💾 No iCloud copy yet — using \(localDevices.count) local device(s) and pushing to iCloud")
+            resolvedDevices = localDevices
+            ICloudSyncService.shared.saveDevices(localDevices)
+        } else {
+            resolvedDevices = []
+        }
+        
+        self.devices = resolvedDevices
+        
+        for device in resolvedDevices {
+            // For USB devices, check if they're already connected
+            if device.connectionType == .usb, let serial = device.upsName {
+                // Check if we already have status data from the USB monitor
+                if let usbStatus = usbMonitor.usbStatusData[serial] {
+                    print("📱 Loading USB device '\(device.name)' - already connected")
+                    var status = usbStatus.withDeviceId(device.id)
+                    status.upsName = device.name
+                    statusData[device.id] = status
                 } else {
-                    // For NUT/SNMP devices, create empty status
-                    statusData[device.id] = UPSStatus(deviceId: device.id)
+                    print("📱 Loading USB device '\(device.name)' - status pending")
+                    // Create initial status that will be updated when USB monitor finds it
+                    var initialStatus = UPSStatus(deviceId: device.id)
+                    initialStatus.upsName = device.name
+                    initialStatus.status = "Connecting..."
+                    statusData[device.id] = initialStatus
                 }
+            } else {
+                // For NUT/SNMP devices, create empty status
+                statusData[device.id] = UPSStatus(deviceId: device.id)
             }
         }
     }
@@ -1450,6 +1477,44 @@ class UPSMonitoringService: ObservableObject {
         } else {
             print("❌ ERROR: Failed to encode devices for saving")
         }
+        ICloudSyncService.shared.saveDevices(devices)
+    }
+    
+    /// Replaces the in-memory device list with a copy that arrived from iCloud.
+    /// USB status entries are preserved or recreated based on the new list.
+    private func applyDevicesFromCloud(_ cloudDevices: [UPSDevice]) {
+        // Persist locally so the next launch sees the same data even if iCloud is slow.
+        if let data = try? JSONEncoder().encode(cloudDevices) {
+            UserDefaults.standard.set(data, forKey: "UPSDevices")
+        }
+        
+        let cloudIDs = Set(cloudDevices.map { $0.id })
+        
+        // Drop status for devices that no longer exist in the cloud copy.
+        for id in statusData.keys where !cloudIDs.contains(id) {
+            statusData.removeValue(forKey: id)
+            pendingStatusUpdates.removeValue(forKey: id)
+        }
+        
+        // Seed status for any newly-arrived devices.
+        for device in cloudDevices where statusData[device.id] == nil {
+            if device.connectionType == .usb, let serial = device.upsName,
+               let usbStatus = usbMonitor.usbStatusData[serial] {
+                var status = usbStatus.withDeviceId(device.id)
+                status.upsName = device.name
+                statusData[device.id] = status
+            } else {
+                var initial = UPSStatus(deviceId: device.id)
+                initial.upsName = device.name
+                statusData[device.id] = initial
+            }
+        }
+        
+        devices = cloudDevices
+        objectWillChange.send()
+        
+        // Refresh status for the new set.
+        Task { await updateAllDevices() }
     }
     
     // MARK: - SNMP Helper Functions
