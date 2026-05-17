@@ -505,7 +505,7 @@ struct ContentView: View {
                                         .font(.system(size: 16, weight: .semibold))
                                         .foregroundColor(.primary)
                                     
-                                    Text("Continuously monitors all devices every 30 seconds")
+                                    Text("Continuously monitors all devices every \(Int(monitoringService.updateInterval)) seconds")
                                         .font(.system(size: 13))
                                         .foregroundColor(.secondary)
                                 }
@@ -561,7 +561,7 @@ struct ContentView: View {
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(.primary)
                                 
-                                Text("Keep the UPS device list in sync across your Macs. When enabled, the cloud copy wins on conflicts.")
+                                Text("Keep the UPS device list in sync across your Macs. When enabled, the cloud copy wins on conflicts. Device credentials are stored in the Keychain and sync via iCloud Keychain when enabled.")
                                     .font(.system(size: 13))
                                     .foregroundColor(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -575,6 +575,37 @@ struct ContentView: View {
                                     set: { iCloudSync.isEnabled = $0 }
                                 )
                             )
+                        }
+                        
+                        Divider()
+                        
+                        HStack(alignment: .center, spacing: 12) {
+                            if !iCloudSync.isAccountAvailable {
+                                Image(systemName: "exclamationmark.icloud")
+                                    .foregroundStyle(.orange)
+                                Text("Not signed into iCloud on this Mac")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                            } else if let lastSynced = iCloudSync.lastSyncedAt {
+                                Image(systemName: "checkmark.icloud")
+                                    .foregroundStyle(.green)
+                                Text("Last synced \(lastSynced, style: .relative) ago")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Image(systemName: "icloud")
+                                    .foregroundStyle(.secondary)
+                                Text(iCloudSync.isEnabled ? "Never synced" : "Sync disabled")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            LiquidGlassButton("Sync Now", icon: "arrow.clockwise", style: .secondary) {
+                                iCloudSync.syncNow()
+                            }
+                            .disabled(!iCloudSync.isEnabled || !iCloudSync.isAccountAvailable)
                         }
                     }
                 }

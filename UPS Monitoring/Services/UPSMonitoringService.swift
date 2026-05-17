@@ -23,7 +23,7 @@ class UPSMonitoringService: ObservableObject {
     @Published var usbMonitor: USBUPSMonitor
     
     private var monitoringTimer: Timer?
-    private let updateInterval: TimeInterval = 60.0 // Increased from 30s to 60s for less CPU usage
+    let updateInterval: TimeInterval = 60.0 // Increased from 30s to 60s for less CPU usage
     private let dataService = DataPersistenceService.shared
     
     private let maxConcurrentQueries = 2 // Reduced from 4 to 2 to lower CPU load
@@ -207,6 +207,7 @@ class UPSMonitoringService: ObservableObject {
         devices.removeAll { $0.id == device.id }
         statusData.removeValue(forKey: device.id)
         pendingStatusUpdates.removeValue(forKey: device.id)
+        KeychainService.shared.deleteDeviceCredentials(deviceID: device.id)
         saveDevices()
     }
     
@@ -1427,7 +1428,7 @@ class UPSMonitoringService: ObservableObject {
             return try? JSONDecoder().decode([UPSDevice].self, from: data)
         }()
         
-        let resolvedDevices: [UPSDevice]
+        var resolvedDevices: [UPSDevice]
         if let cloudDevices = cloudDevices {
             print("☁️ Using \(cloudDevices.count) device(s) from iCloud")
             resolvedDevices = cloudDevices
@@ -1443,7 +1444,31 @@ class UPSMonitoringService: ObservableObject {
             resolvedDevices = []
         }
         
+        // Hydrate credentials from Keychain. If a device still carries
+        // plaintext creds from an older JSON build, migrate them into the
+        // Keychain and the next save will write a clean (cred-free) JSON.
+        var needsCredMigration = false
+        for i in resolvedDevices.indices {
+            let id = resolvedDevices[i].id
+            let stored = KeychainService.shared.loadDeviceCredentials(deviceID: id)
+            if resolvedDevices[i].username != nil || resolvedDevices[i].password != nil {
+                // Migrating from plaintext JSON — store in Keychain and keep in memory.
+                KeychainService.shared.storeDeviceCredentials(
+                    deviceID: id,
+                    username: resolvedDevices[i].username,
+                    password: resolvedDevices[i].password
+                )
+                needsCredMigration = true
+            } else {
+                resolvedDevices[i].username = stored.username
+                resolvedDevices[i].password = stored.password
+            }
+        }
+        
         self.devices = resolvedDevices
+        if needsCredMigration {
+            print("🔐 Migrated plaintext credentials into the Keychain")
+        }
         
         for device in resolvedDevices {
             // For USB devices, check if they're already connected
@@ -1470,6 +1495,16 @@ class UPSMonitoringService: ObservableObject {
     }
     
     private func saveDevices() {
+        // Persist each device's credentials to the Keychain so the encoded JSON
+        // (which omits them) is safe to put in UserDefaults and iCloud KVS.
+        for device in devices {
+            KeychainService.shared.storeDeviceCredentials(
+                deviceID: device.id,
+                username: device.username,
+                password: device.password
+            )
+        }
+        
         if let data = try? JSONEncoder().encode(devices) {
             UserDefaults.standard.set(data, forKey: "UPSDevices")
             UserDefaults.standard.synchronize() // Force immediate save
@@ -1483,21 +1518,30 @@ class UPSMonitoringService: ObservableObject {
     /// Replaces the in-memory device list with a copy that arrived from iCloud.
     /// USB status entries are preserved or recreated based on the new list.
     private func applyDevicesFromCloud(_ cloudDevices: [UPSDevice]) {
+        // Hydrate credentials from the Keychain — the cloud payload never carries them.
+        var hydrated = cloudDevices
+        for i in hydrated.indices {
+            let stored = KeychainService.shared.loadDeviceCredentials(deviceID: hydrated[i].id)
+            hydrated[i].username = hydrated[i].username ?? stored.username
+            hydrated[i].password = hydrated[i].password ?? stored.password
+        }
+        
         // Persist locally so the next launch sees the same data even if iCloud is slow.
-        if let data = try? JSONEncoder().encode(cloudDevices) {
+        if let data = try? JSONEncoder().encode(hydrated) {
             UserDefaults.standard.set(data, forKey: "UPSDevices")
         }
         
-        let cloudIDs = Set(cloudDevices.map { $0.id })
+        let cloudIDs = Set(hydrated.map { $0.id })
         
         // Drop status for devices that no longer exist in the cloud copy.
         for id in statusData.keys where !cloudIDs.contains(id) {
             statusData.removeValue(forKey: id)
             pendingStatusUpdates.removeValue(forKey: id)
+            KeychainService.shared.deleteDeviceCredentials(deviceID: id)
         }
         
         // Seed status for any newly-arrived devices.
-        for device in cloudDevices where statusData[device.id] == nil {
+        for device in hydrated where statusData[device.id] == nil {
             if device.connectionType == .usb, let serial = device.upsName,
                let usbStatus = usbMonitor.usbStatusData[serial] {
                 var status = usbStatus.withDeviceId(device.id)
@@ -1510,7 +1554,7 @@ class UPSMonitoringService: ObservableObject {
             }
         }
         
-        devices = cloudDevices
+        devices = hydrated
         objectWillChange.send()
         
         // Refresh status for the new set.

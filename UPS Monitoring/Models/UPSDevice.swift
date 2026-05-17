@@ -54,6 +54,56 @@ struct UPSDevice: Identifiable, Codable {
         self.batteryModel = batteryModel
         self.batteryNotes = batteryNotes
     }
+    
+    // MARK: - Codable
+    //
+    // `username` and `password` are intentionally omitted from `encode(to:)`
+    // so they never land in UserDefaults or iCloud KVS as plaintext. They live
+    // in the Keychain (iCloud-syncable when iCloud Keychain is enabled) and
+    // are populated/persisted by UPSMonitoringService.
+    //
+    // Decoding still reads them when present so older plaintext data can be
+    // migrated to the Keychain on first load.
+    
+    private enum CodingKeys: String, CodingKey {
+        case id, name, host, port, connectionType
+        case username, password
+        case community, upsName, isEnabled
+        case batteryInstallDate, batteryModel, batteryNotes
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = (try? c.decode(UUID.self, forKey: .id)) ?? UUID()
+        self.name = try c.decode(String.self, forKey: .name)
+        self.host = try c.decode(String.self, forKey: .host)
+        self.port = try c.decode(Int.self, forKey: .port)
+        self.connectionType = try c.decode(ConnectionType.self, forKey: .connectionType)
+        self.username = try c.decodeIfPresent(String.self, forKey: .username)
+        self.password = try c.decodeIfPresent(String.self, forKey: .password)
+        self.community = try c.decodeIfPresent(String.self, forKey: .community)
+        self.upsName = try c.decodeIfPresent(String.self, forKey: .upsName)
+        self.isEnabled = (try? c.decode(Bool.self, forKey: .isEnabled)) ?? true
+        self.batteryInstallDate = try c.decodeIfPresent(Date.self, forKey: .batteryInstallDate)
+        self.batteryModel = try c.decodeIfPresent(String.self, forKey: .batteryModel)
+        self.batteryNotes = try c.decodeIfPresent(String.self, forKey: .batteryNotes)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(host, forKey: .host)
+        try c.encode(port, forKey: .port)
+        try c.encode(connectionType, forKey: .connectionType)
+        // username/password are intentionally NOT encoded — stored in Keychain.
+        try c.encodeIfPresent(community, forKey: .community)
+        try c.encodeIfPresent(upsName, forKey: .upsName)
+        try c.encode(isEnabled, forKey: .isEnabled)
+        try c.encodeIfPresent(batteryInstallDate, forKey: .batteryInstallDate)
+        try c.encodeIfPresent(batteryModel, forKey: .batteryModel)
+        try c.encodeIfPresent(batteryNotes, forKey: .batteryNotes)
+    }
 }
 
 struct UPSStatus: Identifiable {

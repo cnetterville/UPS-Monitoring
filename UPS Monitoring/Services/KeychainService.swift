@@ -137,6 +137,70 @@ class KeychainService {
         print("🔐 Updated \(key) in Keychain")
     }
     
+    // MARK: - Syncable (iCloud Keychain) helpers
+    
+    /// Store a string in the keychain marked `kSecAttrSynchronizable` so it
+    /// syncs via iCloud Keychain when the user has it enabled. Used for device
+    /// credentials so they travel with the iCloud-synced device list.
+    func storeSyncable(_ value: String, for key: String) throws {
+        let data = value.data(using: .utf8)!
+        // Delete any existing copy (in either synchronizable or local form).
+        try? deleteSyncable(for: key)
+        try? delete(for: key)
+        
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data,
+            kSecAttrSynchronizable as String: kCFBooleanTrue!,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw KeychainError.operationFailed(status)
+        }
+    }
+    
+    /// Retrieve a string stored with `storeSyncable`. Falls back to the
+    /// local-only variant for backward compatibility.
+    func retrieveSyncable(for key: String) throws -> String? {
+        let syncQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecAttrSynchronizable as String: kCFBooleanTrue!
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(syncQuery as CFDictionary, &result)
+        if status == errSecSuccess, let data = result as? Data {
+            return String(data: data, encoding: .utf8)
+        }
+        if status != errSecItemNotFound {
+            throw KeychainError.operationFailed(status)
+        }
+        // Fall back to non-synchronizable copy if present.
+        return try retrieve(for: key)
+    }
+    
+    /// Delete a syncable item.
+    func deleteSyncable(for key: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: key,
+            kSecAttrSynchronizable as String: kCFBooleanTrue!
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.operationFailed(status)
+        }
+    }
+    
     /// Clear all items for this service from the keychain
     func clearAll() throws {
         let query: [String: Any] = [
@@ -184,5 +248,46 @@ extension KeychainService {
         static let smtpPassword = "smtp_password"
         static let pushoverToken = "pushover_token"
         static let pushoverUserKey = "pushover_user_key"
+        
+        static func devicePassword(_ deviceID: UUID) -> String { "device_pw_\(deviceID.uuidString)" }
+        static func deviceUsername(_ deviceID: UUID) -> String { "device_user_\(deviceID.uuidString)" }
+    }
+    
+    // MARK: - Device credentials
+    
+    /// Persist `username` and `password` for a device into the iCloud-syncable
+    /// keychain. Passing `nil` removes the stored value.
+    func storeDeviceCredentials(deviceID: UUID, username: String?, password: String?) {
+        do {
+            if let username, !username.isEmpty {
+                try storeSyncable(username, for: Keys.deviceUsername(deviceID))
+            } else {
+                try? deleteSyncable(for: Keys.deviceUsername(deviceID))
+                try? delete(for: Keys.deviceUsername(deviceID))
+            }
+            if let password, !password.isEmpty {
+                try storeSyncable(password, for: Keys.devicePassword(deviceID))
+            } else {
+                try? deleteSyncable(for: Keys.devicePassword(deviceID))
+                try? delete(for: Keys.devicePassword(deviceID))
+            }
+        } catch {
+            print("🔐 Failed to store device credentials for \(deviceID): \(error)")
+        }
+    }
+    
+    /// Load `username` and `password` for a device from the keychain.
+    func loadDeviceCredentials(deviceID: UUID) -> (username: String?, password: String?) {
+        let user = try? retrieveSyncable(for: Keys.deviceUsername(deviceID))
+        let pass = try? retrieveSyncable(for: Keys.devicePassword(deviceID))
+        return (user ?? nil, pass ?? nil)
+    }
+    
+    /// Delete both credential entries for a device.
+    func deleteDeviceCredentials(deviceID: UUID) {
+        try? deleteSyncable(for: Keys.deviceUsername(deviceID))
+        try? deleteSyncable(for: Keys.devicePassword(deviceID))
+        try? delete(for: Keys.deviceUsername(deviceID))
+        try? delete(for: Keys.devicePassword(deviceID))
     }
 }
