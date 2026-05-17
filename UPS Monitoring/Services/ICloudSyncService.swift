@@ -3,6 +3,7 @@
 //  UPS Monitoring
 //
 
+import Combine
 import Foundation
 
 /// Syncs the UPS device list via `NSUbiquitousKeyValueStore`.
@@ -13,18 +14,40 @@ import Foundation
 /// observed (the next external-change notification will re-assert the cloud
 /// version if a write race occurred).
 @MainActor
-final class ICloudSyncService {
+final class ICloudSyncService: ObservableObject {
     static let shared = ICloudSyncService()
 
     private let store = NSUbiquitousKeyValueStore.default
     private let devicesKey = "UPSDevices"
     private let devicesUpdatedKey = "UPSDevicesUpdatedAt"
+    private let enabledDefaultsKey = "iCloudSyncEnabled"
 
     /// Called on the main actor whenever the cloud-side device list changes
     /// externally and should overwrite the local copy.
     var onRemoteDevicesChanged: (([UPSDevice]) -> Void)?
 
+    /// User-facing toggle. When `false`, this service neither reads from nor
+    /// writes to iCloud, and remote-change notifications are ignored.
+    @Published var isEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(isEnabled, forKey: enabledDefaultsKey)
+            if isEnabled {
+                // Pull cloud state immediately so "cloud wins" still holds when re-enabled.
+                store.synchronize()
+                if let cloudDevices = loadDevicesIgnoringEnabledFlag() {
+                    onRemoteDevicesChanged?(cloudDevices)
+                }
+            }
+        }
+    }
+
     private init() {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: enabledDefaultsKey) == nil {
+            defaults.set(true, forKey: enabledDefaultsKey)
+        }
+        self.isEnabled = defaults.bool(forKey: enabledDefaultsKey)
+        
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(storeDidChangeExternally(_:)),
@@ -40,8 +63,14 @@ final class ICloudSyncService {
 
     // MARK: - Devices
 
-    /// Returns the cloud-stored device list, or `nil` if the cloud has no value.
+    /// Returns the cloud-stored device list, or `nil` if the cloud has no value
+    /// or sync is disabled.
     func loadDevices() -> [UPSDevice]? {
+        guard isEnabled else { return nil }
+        return loadDevicesIgnoringEnabledFlag()
+    }
+
+    private func loadDevicesIgnoringEnabledFlag() -> [UPSDevice]? {
         guard let data = store.data(forKey: devicesKey) else { return nil }
         do {
             return try JSONDecoder().decode([UPSDevice].self, from: data)
@@ -51,8 +80,9 @@ final class ICloudSyncService {
         }
     }
 
-    /// Pushes the device list to iCloud. No-op on encode failure.
+    /// Pushes the device list to iCloud. No-op when sync is disabled or on encode failure.
     func saveDevices(_ devices: [UPSDevice]) {
+        guard isEnabled else { return }
         do {
             let data = try JSONEncoder().encode(devices)
             store.set(data, forKey: devicesKey)
@@ -67,6 +97,7 @@ final class ICloudSyncService {
     // MARK: - External change handling
 
     @objc private func storeDidChangeExternally(_ note: Notification) {
+        guard isEnabled else { return }
         let reason = (note.userInfo?[NSUbiquitousKeyValueStoreChangeReasonKey] as? Int) ?? -1
         let changedKeys = note.userInfo?[NSUbiquitousKeyValueStoreChangedKeysKey] as? [String] ?? []
 

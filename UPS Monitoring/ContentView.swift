@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var showingDiscovery = false
     @State private var showingQuitConfirmation = false
     @StateObject private var discoveryService = DiscoveryService()
+    @ObservedObject private var iCloudSync = ICloudSyncService.shared
 
     var body: some View {
         ZStack {
@@ -41,6 +42,8 @@ struct ContentView: View {
                         devicesManagementView
                     case "notifications":
                         notificationsView
+                    case "icloud":
+                        iCloudView
                     default:
                         monitoringView
                     }
@@ -186,6 +189,14 @@ struct ContentView: View {
                 isSelected: selectedTab == "notifications"
             ) {
                 selectedTab = "notifications"
+            }
+
+            tabButton(
+                title: "iCloud",
+                icon: "icloud",
+                isSelected: selectedTab == "icloud"
+            ) {
+                selectedTab = "icloud"
             }
 
             Spacer()
@@ -525,6 +536,50 @@ struct ContentView: View {
     
     private var notificationsView: some View {
         NotificationSettingsView()
+    }
+    
+    // MARK: - iCloud View
+    
+    private var iCloudView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "icloud-section") {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Image(systemName: "icloud")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundStyle(.blue)
+                            Text("iCloud Sync")
+                                .font(.system(size: 22, weight: .bold, design: .rounded))
+                                .foregroundColor(colorScheme == .dark ? .white : .black)
+                            Spacer()
+                        }
+                        
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Sync Devices via iCloud")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                
+                                Text("Keep the UPS device list in sync across your Macs. When enabled, the cloud copy wins on conflicts.")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            
+                            Spacer()
+                            
+                            LiquidGlassToggle(
+                                isOn: Binding(
+                                    get: { iCloudSync.isEnabled },
+                                    set: { iCloudSync.isEnabled = $0 }
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
