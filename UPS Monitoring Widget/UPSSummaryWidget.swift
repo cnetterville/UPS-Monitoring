@@ -10,17 +10,24 @@ import SwiftUI
 
 struct UPSSummaryProvider: TimelineProvider {
     func placeholder(in context: Context) -> UPSSummaryEntry {
-        UPSSummaryEntry(date: Date(), data: nil)
+        // Read shared data so the placeholder isn't a near-blank view when the
+        // system renders it before requesting a snapshot. Falls back to nil
+        // when the app hasn't written data yet.
+        let data = WidgetSharedData.load()
+        return UPSSummaryEntry(date: data?.lastRefresh ?? Date(), data: data)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (UPSSummaryEntry) -> Void) {
-        completion(UPSSummaryEntry(date: Date(), data: WidgetSharedData.load()))
+        let data = WidgetSharedData.load()
+        completion(UPSSummaryEntry(date: data?.lastRefresh ?? Date(), data: data))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<UPSSummaryEntry>) -> Void) {
-        let entry = UPSSummaryEntry(date: Date(), data: WidgetSharedData.load())
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
-        completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+        let data = WidgetSharedData.load()
+        let entry = UPSSummaryEntry(date: data?.lastRefresh ?? Date(), data: data)
+        // Use .atEnd so WidgetKit re-requests the timeline once the entry's
+        // date has aged out, instead of relying on a single hard-coded refresh.
+        completion(Timeline(entries: [entry], policy: .atEnd))
     }
 }
 

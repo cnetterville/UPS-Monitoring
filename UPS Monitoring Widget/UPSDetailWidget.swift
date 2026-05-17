@@ -10,17 +10,19 @@ import SwiftUI
 
 struct UPSDetailProvider: TimelineProvider {
     func placeholder(in context: Context) -> UPSDetailEntry {
-        UPSDetailEntry(date: Date(), data: nil)
+        let data = WidgetSharedData.load()
+        return UPSDetailEntry(date: data?.lastRefresh ?? Date(), data: data)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (UPSDetailEntry) -> Void) {
-        completion(UPSDetailEntry(date: Date(), data: WidgetSharedData.load()))
+        let data = WidgetSharedData.load()
+        completion(UPSDetailEntry(date: data?.lastRefresh ?? Date(), data: data))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<UPSDetailEntry>) -> Void) {
-        let entry = UPSDetailEntry(date: Date(), data: WidgetSharedData.load())
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
-        completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+        let data = WidgetSharedData.load()
+        let entry = UPSDetailEntry(date: data?.lastRefresh ?? Date(), data: data)
+        completion(Timeline(entries: [entry], policy: .atEnd))
     }
 }
 
