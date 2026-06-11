@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct AddEmailRecipientView: View {
-    let mailjetService: MailjetService
+    let brevoService: BrevoService
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredCard: String? = nil
@@ -173,7 +173,7 @@ struct AddEmailRecipientView: View {
             alertTypes: selectedAlertTypes
         )
         
-        mailjetService.addRecipient(recipient)
+        brevoService.addRecipient(recipient)
     }
 }
 
@@ -246,7 +246,7 @@ struct AlertTypeToggleRow: View {
 
 struct EditEmailRecipientView: View {
     @State private var recipient: EmailRecipient
-    let mailjetService: MailjetService
+    let brevoService: BrevoService
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredCard: String? = nil
@@ -256,9 +256,9 @@ struct EditEmailRecipientView: View {
     @State private var isEnabled: Bool
     @State private var selectedAlertTypes: Set<EmailAlertType>
     
-    init(recipient: EmailRecipient, mailjetService: MailjetService) {
+    init(recipient: EmailRecipient, brevoService: BrevoService) {
         self.recipient = recipient
-        self.mailjetService = mailjetService
+        self.brevoService = brevoService
         self._name = State(initialValue: recipient.name)
         self._email = State(initialValue: recipient.email)
         self._isEnabled = State(initialValue: recipient.isEnabled)
@@ -419,6 +419,6 @@ struct EditEmailRecipientView: View {
         updatedRecipient.isEnabled = isEnabled
         updatedRecipient.alertTypes = selectedAlertTypes
         
-        mailjetService.updateRecipient(updatedRecipient)
+        brevoService.updateRecipient(updatedRecipient)
     }
 }

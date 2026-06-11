@@ -357,7 +357,7 @@ class ReportSchedulerService: ObservableObject {
             statusData: statusData,
             reportType: .weekly
         )
-        MailjetService.shared.queueEmail(reportMessage)
+        BrevoService.shared.queueEmail(reportMessage)
     }
     
     func sendTestMonthlyReport() {
@@ -374,7 +374,7 @@ class ReportSchedulerService: ObservableObject {
             statusData: statusData,
             reportType: .monthly
         )
-        MailjetService.shared.queueEmail(reportMessage)
+        BrevoService.shared.queueEmail(reportMessage)
     }
     
     func debugReportScheduler() {

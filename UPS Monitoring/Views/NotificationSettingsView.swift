@@ -10,13 +10,13 @@ import UserNotifications
 
 struct NotificationSettingsView: View {
     @StateObject private var notificationService = NotificationService.shared
-    @StateObject private var mailjetService = MailjetService.shared
+    @StateObject private var brevoService = BrevoService.shared
     @StateObject private var pushoverService = PushoverService.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingSystemPreferences = false
     @State private var hoveredCard: String? = nil
     @State private var showingAddRecipient = false
-    @State private var showingMailjetConfig = false
+    @State private var showingBrevoConfig = false
     
     private var enabledNotificationCount: Int {
         var count = 0
@@ -64,7 +64,7 @@ struct NotificationSettingsView: View {
                     
                     if notificationService.emailNotificationsEnabled {
                         // Mailjet Configuration
-                        mailjetConfigurationSection
+                        brevoConfigurationSection
                         
                         // Email Recipients
                         emailRecipientsSection
@@ -99,10 +99,10 @@ struct NotificationSettingsView: View {
         }
         .frame(maxWidth: 800) // Increased for email settings
         .sheet(isPresented: $showingAddRecipient) {
-            AddEmailRecipientView(mailjetService: mailjetService)
+            AddEmailRecipientView(brevoService: brevoService)
         }
-        .sheet(isPresented: $showingMailjetConfig) {
-            MailjetConfigurationView(mailjetService: mailjetService)
+        .sheet(isPresented: $showingBrevoConfig) {
+            BrevoConfigurationView(brevoService: brevoService)
         }
     }
     
@@ -383,7 +383,7 @@ struct NotificationSettingsView: View {
                     LiquidGlassToggle(isOn: $notificationService.emailNotificationsEnabled)
                 }
                 
-                if !mailjetService.isConfigured && notificationService.emailNotificationsEnabled {
+                if !brevoService.isConfigured && notificationService.emailNotificationsEnabled {
                     VStack(spacing: 12) {
                         HStack(spacing: 12) {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -397,11 +397,11 @@ struct NotificationSettingsView: View {
                         }
                         
                         LiquidGlassButton(
-                            "Configure Mailjet",
+                            "Configure Brevo",
                             icon: "gear",
                             style: .primary
                         ) {
-                            showingMailjetConfig = true
+                            showingBrevoConfig = true
                         }
                     }
                     .padding(.top, 8)
@@ -411,8 +411,8 @@ struct NotificationSettingsView: View {
     }
     
     @ViewBuilder
-    private var mailjetConfigurationSection: some View {
-        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "mailjet-config") {
+    private var brevoConfigurationSection: some View {
+        LiquidGlassCard(hoveredCard: $hoveredCard, cardId: "brevo-config") {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     Text("Email Service Configuration")
@@ -423,12 +423,12 @@ struct NotificationSettingsView: View {
                     
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(mailjetService.isConfigured ? .green : .red)
+                            .fill(brevoService.isConfigured ? .green : .red)
                             .frame(width: 8, height: 8)
                         
-                        Text(mailjetService.isConfigured ? "Configured" : "Not Configured")
+                        Text(brevoService.isConfigured ? "Configured" : "Not Configured")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(mailjetService.isConfigured ? .green : .red)
+                            .foregroundColor(brevoService.isConfigured ? .green : .red)
                             .textCase(.uppercase)
                             .tracking(0.5)
                     }
@@ -441,7 +441,7 @@ struct NotificationSettingsView: View {
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(.primary)
                             
-                            Text("Mailjet API key, secret, and sender details")
+                            Text("Brevo API key and sender details")
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                         }
@@ -453,18 +453,18 @@ struct NotificationSettingsView: View {
                             icon: "gear",
                             style: .secondary
                         ) {
-                            showingMailjetConfig = true
+                            showingBrevoConfig = true
                         }
                     }
                     
-                    if mailjetService.isConfigured {
+                    if brevoService.isConfigured {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text("From:")
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(.secondary)
                                 
-                                Text("\(mailjetService.fromName) <\(mailjetService.fromEmail)>")
+                                Text("\(brevoService.fromName) <\(brevoService.fromEmail)>")
                                     .font(.system(size: 12, design: .monospaced))
                                     .foregroundColor(.primary)
                                 
@@ -476,7 +476,7 @@ struct NotificationSettingsView: View {
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(.secondary)
                                 
-                                Text("\(mailjetService.recipients.count) configured")
+                                Text("\(brevoService.recipients.count) configured")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundColor(.blue)
                                 
@@ -502,7 +502,7 @@ struct NotificationSettingsView: View {
                     
                     Spacer()
                     
-                    Text("\(mailjetService.recipients.count) recipients")
+                    Text("\(brevoService.recipients.count) recipients")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
@@ -519,7 +519,7 @@ struct NotificationSettingsView: View {
                         )
                 }
                 
-                if mailjetService.recipients.isEmpty {
+                if brevoService.recipients.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "person.2.slash")
                             .font(.system(size: 24, weight: .light))
@@ -538,10 +538,10 @@ struct NotificationSettingsView: View {
                     .frame(maxWidth: .infinity)
                 } else {
                     VStack(spacing: 8) {
-                        ForEach(mailjetService.recipients) { recipient in
+                        ForEach(brevoService.recipients) { recipient in
                             EmailRecipientRow(
                                 recipient: recipient,
-                                mailjetService: mailjetService,
+                                brevoService: brevoService,
                                 hoveredCard: $hoveredCard
                             )
                         }
@@ -1170,7 +1170,7 @@ struct NotificationSettingsView: View {
                             }
                         }
                         
-                        if notificationService.emailNotificationsEnabled && mailjetService.isConfigured {
+                        if notificationService.emailNotificationsEnabled && brevoService.isConfigured {
                             LiquidGlassButton(
                                 "Test Email",
                                 icon: "envelope.fill",
@@ -1194,7 +1194,7 @@ struct NotificationSettingsView: View {
                     }
                     
                     // Email Report Tests
-                    if notificationService.emailNotificationsEnabled && mailjetService.isConfigured {
+                    if notificationService.emailNotificationsEnabled && brevoService.isConfigured {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Test Reports")
                                 .font(.system(size: 14, weight: .semibold))

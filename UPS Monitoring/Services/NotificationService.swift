@@ -145,7 +145,7 @@ class NotificationService: NSObject, ObservableObject {
     
     private var cancellables = Set<AnyCancellable>()
     
-    private let mailjetService = MailjetService.shared
+    private let brevoService = BrevoService.shared
     private let pushoverService = PushoverService.shared
     
     private override init() {
@@ -316,7 +316,7 @@ class NotificationService: NSObject, ObservableObject {
                                 alertType: .powerFailure,
                                 additionalInfo: "The UPS switched to battery power at \(Date().formatted()). Estimated runtime: \(statusToCompare.formattedRuntime ?? "Unknown")"
                             )
-                            mailjetService.queueEmail(emailMessage)
+                            brevoService.queueEmail(emailMessage)
                         }
 
                         sendPushover(title: "Power Failure - \(device.name)", message: "UPS switched to battery power. Battery: \(Int(statusToCompare.batteryCharge ?? 0))%. Runtime: \(statusToCompare.formattedRuntime ?? "Unknown")", priority: .high, alertType: .critical)
@@ -349,7 +349,7 @@ class NotificationService: NSObject, ObservableObject {
                                 alertType: .batteryLow(threshold: lowBatteryThreshold),
                                 additionalInfo: "Battery level dropped to \(Int(currentCharge))% at \(Date().formatted()). Consider immediate action to prevent data loss."
                             )
-                            mailjetService.queueEmail(emailMessage)
+                            brevoService.queueEmail(emailMessage)
                         }
 
                         sendPushover(title: "Low Battery - \(device.name)", message: "Battery dropped to \(Int(currentCharge))%. Runtime: \(statusToCompare.formattedRuntime ?? "Unknown")", priority: .high, alertType: .critical)
@@ -368,7 +368,7 @@ class NotificationService: NSObject, ObservableObject {
                                 value: "\(Int(currentTemp))°C",
                                 threshold: "Normal range: 20-35°C"
                             )
-                            mailjetService.queueEmail(emailMessage)
+                            brevoService.queueEmail(emailMessage)
                         }
 
                         sendPushover(title: "High Temperature - \(device.name)", message: "Temperature reached \(Int(currentTemp))°C (normal: 20-35°C)", alertType: .warning)
@@ -387,7 +387,7 @@ class NotificationService: NSObject, ObservableObject {
                                 value: "\(Int(currentLoad))%",
                                 threshold: "Recommended maximum: 80%"
                             )
-                            mailjetService.queueEmail(emailMessage)
+                            brevoService.queueEmail(emailMessage)
                         }
 
                         sendPushover(title: "High Load - \(device.name)", message: "Load reached \(Int(currentLoad))% (recommended max: 80%)", alertType: .warning)
@@ -410,7 +410,7 @@ class NotificationService: NSObject, ObservableObject {
                                 alertType: .criticalAlarm,
                                 additionalInfo: "The UPS has reported \(currentAlarms) active alarm(s) at \(Date().formatted()). Professional service may be required."
                             )
-                            mailjetService.queueEmail(emailMessage)
+                            brevoService.queueEmail(emailMessage)
                         }
 
                         sendPushover(title: "Critical Alarm - \(device.name)", message: "\(currentAlarms) active alarm(s). Check the device immediately.", priority: .high, alertType: .critical)
@@ -453,7 +453,7 @@ class NotificationService: NSObject, ObservableObject {
                             alertType: .batteryReplacement(age: ageInYears),
                             details: "The battery was installed on \(device.batteryInstallDate?.formatted(date: .long, time: .omitted) ?? "Unknown date") and is now \(ageInYears) years old. Consider scheduling a replacement to ensure continued reliable operation."
                         )
-                        mailjetService.queueEmail(emailMessage)
+                        brevoService.queueEmail(emailMessage)
 
                         sendPushover(title: "Battery Maintenance - \(device.name)", message: "Battery is \(ageInYears) years old. Consider scheduling a replacement.", alertType: .maintenance)
 
@@ -542,7 +542,7 @@ class NotificationService: NSObject, ObservableObject {
                                 alertType: .deviceOffline,
                                 additionalInfo: "The device stopped responding at \(Date().formatted()). Please check network connectivity and device status."
                             )
-                            self.mailjetService.queueEmail(emailMessage)
+                            self.brevoService.queueEmail(emailMessage)
                         }
 
                         self.sendPushover(title: "Device Offline - \(device.name)", message: "Device stopped responding at \(Date().formatted()). Check network connectivity.", priority: .high, alertType: .critical)
@@ -606,7 +606,7 @@ class NotificationService: NSObject, ObservableObject {
             deviceName: device.name,
             deviceData: nil
         )
-        mailjetService.queueEmail(customMessage)
+        brevoService.queueEmail(customMessage)
     }
     
     // MARK: - Report Generation
@@ -619,7 +619,7 @@ class NotificationService: NSObject, ObservableObject {
             statusData: statusData,
             reportType: .daily
         )
-        mailjetService.queueEmail(reportMessage)
+        brevoService.queueEmail(reportMessage)
     }
     
     func sendWeeklyReport(_ devices: [UPSDevice], statusData: [UUID: UPSStatus]) {
@@ -638,7 +638,7 @@ class NotificationService: NSObject, ObservableObject {
             statusData: statusData,
             reportType: .weekly
         )
-        mailjetService.queueEmail(reportMessage)
+        brevoService.queueEmail(reportMessage)
     }
     
     func sendMonthlyReport(_ devices: [UPSDevice], statusData: [UUID: UPSStatus]) {
@@ -657,7 +657,7 @@ class NotificationService: NSObject, ObservableObject {
             statusData: statusData,
             reportType: .monthly
         )
-        mailjetService.queueEmail(reportMessage)
+        brevoService.queueEmail(reportMessage)
     }
     
     // MARK: - Notification Methods
@@ -822,7 +822,7 @@ class NotificationService: NSObject, ObservableObject {
     func testEmailNotification() {
         Task {
             do {
-                try await mailjetService.sendTestEmail()
+                try await brevoService.sendTestEmail()
                 let content = UNMutableNotificationContent()
                 content.title = "Test Email Sent"
                 content.body = "Check your email for the test message"

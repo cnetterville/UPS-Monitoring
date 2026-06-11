@@ -243,6 +243,7 @@ extension KeychainService {
     struct Keys {
         static let mailjetAPIKey = "mailjet_api_key"
         static let mailjetAPISecret = "mailjet_api_secret"
+        static let brevoAPIKey = "brevo_api_key"
         
         // Add more keys as needed for other sensitive data
         static let smtpPassword = "smtp_password"

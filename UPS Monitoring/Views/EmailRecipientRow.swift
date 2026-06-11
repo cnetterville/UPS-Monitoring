@@ -9,7 +9,7 @@ import SwiftUI
 
 struct EmailRecipientRow: View {
     let recipient: EmailRecipient
-    let mailjetService: MailjetService
+    let brevoService: BrevoService
     @Binding var hoveredCard: String?
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
@@ -80,7 +80,7 @@ struct EmailRecipientRow: View {
                     icon: "trash",
                     style: .destructive
                 ) {
-                    mailjetService.removeRecipient(recipient)
+                    brevoService.removeRecipient(recipient)
                 }
             }
         }
@@ -111,7 +111,7 @@ struct EmailRecipientRow: View {
             hoveredCard = hovered ? cardId : nil
         }
         .sheet(isPresented: $showingEditRecipient) {
-            EditEmailRecipientView(recipient: recipient, mailjetService: mailjetService)
+            EditEmailRecipientView(recipient: recipient, brevoService: brevoService)
         }
     }
 }
